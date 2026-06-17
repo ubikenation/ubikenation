@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
@@ -130,9 +131,31 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     final status = trip['status'] as String;
     final fare = (trip['final_fare'] as num?)?.toInt() ?? (trip['base_fare'] as num).toInt();
 
+    final pLat = (trip['pickup_lat'] as num?)?.toDouble() ?? -1.2921;
+    final pLng = (trip['pickup_lng'] as num?)?.toDouble() ?? 36.8219;
+    final dLat = (trip['dropoff_lat'] as num?)?.toDouble() ?? pLat;
+    final dLng = (trip['dropoff_lng'] as num?)?.toDouble() ?? pLng;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: SizedBox(
+            height: 180,
+            child: GoogleMap(
+              initialCameraPosition: CameraPosition(target: LatLng((pLat + dLat) / 2, (pLng + dLng) / 2), zoom: 12),
+              markers: {
+                Marker(markerId: const MarkerId('pickup'), position: LatLng(pLat, pLng), infoWindow: const InfoWindow(title: 'Pickup')),
+                Marker(markerId: const MarkerId('dropoff'), position: LatLng(dLat, dLng), infoWindow: const InfoWindow(title: 'Destination')),
+              },
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              liteModeEnabled: true,
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(16)),
