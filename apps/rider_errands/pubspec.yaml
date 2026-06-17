@@ -41,6 +41,7 @@ dependencies:
   image_picker: ^1.1.2
   google_maps_flutter: ^2.9.0
   intl: ^0.19.0
+  connectivity_plus: ^6.1.0
 
 dev_dependencies:
   flutter_test:

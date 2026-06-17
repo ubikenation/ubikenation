@@ -1,6 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Supabase auth for bike riders.
+/// Supabase auth for riders (sign-up, sign-in, password reset).
 class AuthService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -9,13 +9,15 @@ class AuthService {
   bool get isSignedIn => session != null;
   Stream<AuthState> get onAuthChange => _supabase.auth.onAuthStateChange;
 
-  Future<void> signUp({
+  /// Returns the AuthResponse. If `session` is null, email confirmation is
+  /// required before the user can log in.
+  Future<AuthResponse> signUp({
     required String email,
     required String password,
     required String fullName,
     required String phone,
-  }) async {
-    await _supabase.auth.signUp(
+  }) {
+    return _supabase.auth.signUp(
       email: email,
       password: password,
       data: {'full_name': fullName, 'phone': phone, 'role': 'bike_rider'},
@@ -24,6 +26,8 @@ class AuthService {
 
   Future<void> signIn({required String email, required String password}) =>
       _supabase.auth.signInWithPassword(email: email, password: password);
+
+  Future<void> resetPassword(String email) => _supabase.auth.resetPasswordForEmail(email);
 
   Future<void> signOut() => _supabase.auth.signOut();
 }

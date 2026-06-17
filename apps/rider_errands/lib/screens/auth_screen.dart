@@ -20,7 +20,9 @@ class _AuthScreenState extends State<AuthScreen> {
 
   bool _isLogin = true;
   bool _busy = false;
+  bool _obscure = true;
   String? _error;
+  String? _info;
 
   @override
   void dispose() {
@@ -31,28 +33,75 @@ class _AuthScreenState extends State<AuthScreen> {
     super.dispose();
   }
 
+  String _friendly(Object e) {
+    final m = e.toString();
+    if (m.contains('Email not confirmed')) {
+      return 'Please verify your email first — check your inbox for the link.';
+    }
+    if (m.contains('Invalid login credentials')) return 'Wrong email or password.';
+    if (m.contains('User already registered')) return 'That email already has an account. Try logging in.';
+    if (m.contains('SocketException') || m.contains('Failed host lookup')) {
+      return 'No internet connection. Turn on data or Wi-Fi and try again.';
+    }
+    return m.replaceFirst('AuthException(message: ', '').replaceAll(')', '');
+  }
+
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
     setState(() {
       _busy = true;
       _error = null;
+      _info = null;
     });
     final auth = context.read<AuthService>();
     try {
       if (_isLogin) {
         await auth.signIn(email: _email.text.trim(), password: _password.text);
       } else {
-        await auth.signUp(
+        final res = await auth.signUp(
           email: _email.text.trim(),
           password: _password.text,
           fullName: _name.text.trim(),
           phone: _phone.text.trim(),
         );
+        if (res.session == null) {
+          setState(() {
+            _isLogin = true;
+            _info = 'Account created! Check your email to verify, then log in.';
+          });
+        }
       }
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = _friendly(e));
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _forgotPassword() async {
+    final auth = context.read<AuthService>();
+    final emailCtrl = TextEditingController(text: _email.text.trim());
+    final send = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset password'),
+        content: TextField(
+          controller: emailCtrl,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(labelText: 'Your email'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send link')),
+        ],
+      ),
+    );
+    if (send != true) return;
+    try {
+      await auth.resetPassword(emailCtrl.text.trim());
+      if (mounted) setState(() => _info = 'Password reset link sent to your email.');
+    } catch (e) {
+      if (mounted) setState(() => _error = _friendly(e));
     }
   }
 
@@ -78,6 +127,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 if (!_isLogin) ...[
                   TextFormField(
                     controller: _name,
+                    textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(labelText: 'Full name'),
                     validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
                   ),
@@ -99,11 +149,27 @@ class _AuthScreenState extends State<AuthScreen> {
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _password,
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: 'Password'),
+                  obscureText: _obscure,
+                  decoration: InputDecoration(
+                    labelText: 'Password',
+                    suffixIcon: IconButton(
+                      icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: AppTheme.muted),
+                      onPressed: () => setState(() => _obscure = !_obscure),
+                    ),
+                  ),
                   validator: (v) => (v == null || v.length < 6) ? 'Min 6 characters' : null,
                 ),
-                const SizedBox(height: 20),
+                if (_isLogin)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(onPressed: _busy ? null : _forgotPassword, child: const Text('Forgot password?')),
+                  ),
+                const SizedBox(height: 8),
+                if (_info != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(_info!, style: const TextStyle(color: AppTheme.primary)),
+                  ),
                 if (_error != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -116,7 +182,13 @@ class _AuthScreenState extends State<AuthScreen> {
                       : Text(_isLogin ? 'Log In' : 'Sign Up'),
                 ),
                 TextButton(
-                  onPressed: _busy ? null : () => setState(() => _isLogin = !_isLogin),
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                            _isLogin = !_isLogin;
+                            _error = null;
+                            _info = null;
+                          }),
                   child: Text(_isLogin ? 'New rider? Create an account' : 'Have an account? Log in'),
                 ),
               ],

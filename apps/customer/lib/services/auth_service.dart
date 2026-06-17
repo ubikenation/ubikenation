@@ -1,6 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Wraps Supabase Auth for email/password sign-up and sign-in.
+/// Wraps Supabase Auth for email/password sign-up, sign-in and password reset.
 class AuthService {
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -10,13 +10,15 @@ class AuthService {
 
   Stream<AuthState> get onAuthChange => _supabase.auth.onAuthStateChange;
 
-  Future<void> signUp({
+  /// Returns the AuthResponse. If `session` is null, email confirmation is
+  /// required before the user can log in.
+  Future<AuthResponse> signUp({
     required String email,
     required String password,
     required String fullName,
     required String phone,
-  }) async {
-    await _supabase.auth.signUp(
+  }) {
+    return _supabase.auth.signUp(
       email: email,
       password: password,
       data: {'full_name': fullName, 'phone': phone, 'role': 'customer'},
@@ -26,6 +28,9 @@ class AuthService {
   Future<void> signIn({required String email, required String password}) async {
     await _supabase.auth.signInWithPassword(email: email, password: password);
   }
+
+  /// Sends a password-reset email.
+  Future<void> resetPassword(String email) => _supabase.auth.resetPasswordForEmail(email);
 
   Future<void> signOut() => _supabase.auth.signOut();
 }

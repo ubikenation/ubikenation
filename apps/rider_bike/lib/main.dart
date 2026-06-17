@@ -7,6 +7,7 @@ import 'services/api_client.dart';
 import 'services/auth_service.dart';
 import 'services/rider_repository.dart';
 import 'theme/app_theme.dart';
+import 'widgets/connectivity_gate.dart';
 import 'screens/auth_screen.dart';
 import 'screens/gate_screen.dart';
 import 'screens/splash_screen.dart';
@@ -41,7 +42,7 @@ class RiderApp extends StatelessWidget {
       title: 'U-Bike Rider',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: const _AuthGate(),
+      home: const ConnectivityGate(child: _AuthGate()),
     );
   }
 }
