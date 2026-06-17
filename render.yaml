@@ -1,0 +1,57 @@
+# Render Blueprint for the U-Bike backend API.
+# In Render: New → Blueprint → connect this repo. Render reads this file.
+# Then set the secret env vars (marked sync:false) in the dashboard.
+services:
+  - type: web
+    name: ubike-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    # --include=dev forces TypeScript/types to install even with NODE_ENV=production
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # --- secrets: set these in the Render dashboard (Environment tab) ---
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: PAYSTACK_WEBHOOK_SECRET
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: MAPBOX_ACCESS_TOKEN
+        sync: false
+      - key: ORS_API_KEY
+        sync: false
+      - key: ZEGO_APP_ID
+        sync: false
+      - key: ZEGO_SERVER_SECRET
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      # --- business rules (safe defaults; override if needed) ---
+      - key: COMMISSION_RATE
+        value: "0.20"
+      - key: FOUNDING_BIKE_SLOTS
+        value: "10"
+      - key: FOUNDING_CAR_SLOTS
+        value: "10"
+      - key: BIKE_REGISTRATION_FEE
+        value: "2000"
+      - key: CAR_REGISTRATION_FEE
+        value: "4000"
+      - key: MAX_RIDER_PRICE_ADJUSTMENT
+        value: "0.30"
+      - key: UPFRONT_PAYMENT_RATIO
+        value: "0.50"
