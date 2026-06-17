@@ -127,7 +127,7 @@ class _BookingScreenState extends State<BookingScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: SizedBox(
-                height: 200,
+                height: 280,
                 child: GoogleMap(
                   initialCameraPosition: CameraPosition(
                     target: LatLng((_pickupLat + _dropLat) / 2, (_pickupLng + _dropLng) / 2),
