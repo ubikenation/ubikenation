@@ -6,12 +6,12 @@ interface Photo {
   tall?: boolean;
 }
 
-// Drop the 4 photos into website/public/img/ with these exact filenames.
+// Photos live in website/public/img/ (Pexels filenames as supplied).
 const PHOTOS: Photo[] = [
-  { src: '/img/ebike.jpg', label: 'Electric bikes', tall: true },
-  { src: '/img/fleet.jpg', label: 'A fleet for every trip' },
-  { src: '/img/hail.jpg', label: 'A ride in seconds' },
-  { src: '/img/bikeshare.jpg', label: 'Move the smart way', tall: true },
+  { src: '/img/pexels-wendelmoretti-3173175.jpg', label: 'Electric bikes', tall: true },
+  { src: '/img/pexels-golden-jojo-428077-2409592.jpg', label: 'A fleet for every trip' },
+  { src: '/img/pexels-alexandros-chatzidimos-2033032-3652766.jpg', label: 'A ride in seconds' },
+  { src: '/img/pexels-daven-hsu-5766928-35097211.jpg', label: 'Move the smart way', tall: true },
 ];
 
 /**
