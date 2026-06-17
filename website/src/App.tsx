@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowUpRight, Menu, X } from 'lucide-react';
 import ShinyText from './components/ShinyText';
+import Showcase from './components/Showcase';
 
 const NAV_LINKS = ['Home', 'About', 'Services', 'Pricing', 'Safety', 'Riders', 'Contact'];
 
@@ -22,7 +23,8 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <main className="relative h-screen w-full overflow-hidden bg-black font-sans text-white">
+    <div className="relative w-full bg-black font-sans text-white">
+      <section className="relative h-screen w-full overflow-hidden">
       {/* Background video */}
       <video
         className="absolute inset-0 h-full w-full object-cover"
@@ -173,6 +175,10 @@ export default function App() {
           </div>
         </div>
       </div>
-    </main>
+      </section>
+
+      {/* Photo showcase */}
+      <Showcase />
+    </div>
   );
 }
