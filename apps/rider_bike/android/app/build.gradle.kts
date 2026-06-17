@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.ubike.ubike_rider_bike"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #000;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Seamless shiny-text sweep: a white band moves across, clipped to the text.
+   Outside the band is transparent, so the base colour shows and the loop is gapless. */
+.shiny-text {
+  background-image:
+    linear-gradient(
+      var(--spread, 100deg),
+      transparent 38%,
+      var(--shine, #ffffff) 50%,
+      transparent 62%
+    ),
+    linear-gradient(var(--base, #12a0d7), var(--base, #12a0d7));
+  background-size: 220% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-position: 150% 0, 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shiny-sweep var(--speed, 3s) linear infinite;
+}
+
+@keyframes shiny-sweep {
+  to {
+    background-position: -70% 0, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shiny-text {
+    animation: none;
+    background-position: 50% 0, 0 0;
+  }
+}
