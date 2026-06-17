@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { handler, ok } from '../../utils/http';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import {
-  approveRider, getDashboardStats, getFoundingProgram, listPayouts,
+  approveRider, getDashboardStats, getFoundingProgram, getRiderDocuments, listPayouts,
   listRiders, listTrips, rejectRider, setFoundingProgram,
 } from './admin.service';
 
@@ -17,6 +17,10 @@ adminRouter.get('/stats', handler(async (_req, res) => ok(res, await getDashboar
 adminRouter.get('/riders', handler(async (req, res) => {
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
   ok(res, await listRiders(status));
+}));
+
+adminRouter.get('/riders/:id/documents', handler(async (req, res) => {
+  ok(res, await getRiderDocuments(req.params.id));
 }));
 
 adminRouter.post('/riders/:id/approve', handler(async (req, res) => {

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../services/rider_repository.dart';
+import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
 
 /// Bike rider registration, mirroring the prototype:
@@ -19,6 +20,8 @@ class RegistrationScreen extends StatefulWidget {
 class _RegistrationScreenState extends State<RegistrationScreen> {
   int _step = 0;
   bool _busy = false;
+  final _storage = StorageService();
+  String? _uploading;
   String? _error;
   FeeQuote? _fee;
 
@@ -31,14 +34,14 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   // Documents captured (placeholder storage paths; real upload via Supabase Storage).
   // Car rider required documents (matches backend REQUIRED_DOCS['car']).
-  final Map<String, bool> _docs = {
-    'national_id_url': false,
-    'driving_license_url': false,
-    'selfie_url': false,
-    'logbook_url': false,
-    'insurance_url': false,
-    'inspection_url': false,
-    'vehicle_photo_url': false,
+  final Map<String, String?> _docs = {
+    'national_id_url': null,
+    'driving_license_url': null,
+    'selfie_url': null,
+    'logbook_url': null,
+    'insurance_url': null,
+    'inspection_url': null,
+    'vehicle_photo_url': null,
   };
 
   @override
@@ -68,7 +71,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     }
   }
 
-  bool get _allDocsCaptured => _docs.values.every((v) => v);
+  bool get _allDocsCaptured => _docs.values.every((v) => v != null);
 
   Future<void> _submit() async {
     setState(() {
@@ -77,7 +80,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     });
     try {
       final repo = context.read<RiderRepository>();
-      final payload = {for (final k in _docs.keys) k: 'uploads/$k.jpg'};
+      final payload = {for (final e in _docs.entries) e.key: e.value!};
       await repo.submitDocuments(payload);
       widget.onDone();
     } catch (e) {
@@ -274,16 +277,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   }
 
   Widget _docTile(String key) {
-    final captured = _docs[key]!;
+    final captured = _docs[key] != null;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(captured ? Icons.check_circle : Icons.upload_file,
           color: captured ? AppTheme.green : AppTheme.muted),
       title: Text(_label(key)),
-      trailing: TextButton(
-        onPressed: () => setState(() => _docs[key] = true),
-        child: Text(captured ? 'Re-capture' : 'Capture'),
-      ),
+      trailing: _uploading == key
+          ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+          : TextButton(
+              onPressed: () => _capture(key),
+              child: Text(captured ? 'Re-capture' : 'Capture'),
+            ),
     );
   }
 
@@ -295,6 +300,21 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           Text(label),
         ],
       );
+
+  Future<void> _capture(String key) async {
+    setState(() {
+      _uploading = key;
+      _error = null;
+    });
+    try {
+      final path = await _storage.pickAndUploadDoc(key);
+      if (path != null) setState(() => _docs[key] = path);
+    } catch (e) {
+      setState(() => _error = 'Upload failed: $e');
+    } finally {
+      if (mounted) setState(() => _uploading = null);
+    }
+  }
 
   String _label(String key) => switch (key) {
         'national_id_url' => 'National ID',

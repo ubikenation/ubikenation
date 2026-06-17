@@ -91,6 +91,45 @@ export async function setFoundingProgram(patch: { enabled?: boolean; bikeSlots?:
   return getFoundingProgram();
 }
 
+const DOC_LABELS: Record<string, string> = {
+  national_id_url: 'National ID',
+  driving_license_url: 'Driving License',
+  profile_photo_url: 'Profile Photo',
+  selfie_url: 'Selfie',
+  vehicle_photo_url: 'Vehicle Photo',
+  ownership_proof_url: 'Ownership Proof',
+  logbook_url: 'Vehicle Logbook',
+  insurance_url: 'Insurance',
+  inspection_url: 'Inspection Certificate',
+};
+
+/**
+ * Returns short-lived signed URLs for a rider's uploaded documents so an admin
+ * can review them before approving/rejecting. The bucket is private; only the
+ * service-role backend can mint these URLs.
+ */
+export async function getRiderDocuments(riderId: string) {
+  const cols = Object.keys(DOC_LABELS);
+  const { data: rider, error } = await supabaseAdmin
+    .from('riders')
+    .select(cols.join(', '))
+    .eq('id', riderId)
+    .single();
+  if (error || !rider) throw notFound('rider not found');
+
+  const row = rider as unknown as Record<string, string | null>;
+  const out: Array<{ key: string; label: string; url: string | null }> = [];
+  for (const key of cols) {
+    const path = row[key];
+    if (!path) continue;
+    const { data: signed } = await supabaseAdmin.storage
+      .from('rider-documents')
+      .createSignedUrl(path, 60 * 60); // 1 hour
+    out.push({ key, label: DOC_LABELS[key], url: signed?.signedUrl ?? null });
+  }
+  return out;
+}
+
 export async function listTrips(limit = 50) {
   const { data } = await supabaseAdmin
     .from('trips')
