@@ -28,8 +28,10 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50">
       <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-white p-8 shadow-sm">
         <div className="mb-6 text-center">
-          <div className="text-2xl font-bold text-sky-600">U-Bike Admin</div>
-          <p className="text-sm text-slate-500">Sign in to the control panel</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="U-Bike" className="mx-auto mb-3 h-12 w-auto" />
+          <div className="text-lg font-semibold text-slate-700">Admin Control Panel</div>
+          <p className="text-sm text-slate-500">Sign in to continue</p>
         </div>
         <label className="mb-1 block text-sm font-medium text-slate-700">Email</label>
         <input

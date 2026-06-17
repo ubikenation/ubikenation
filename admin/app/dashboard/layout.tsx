@@ -40,7 +40,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-800">
       <aside className="flex w-60 flex-col border-r border-slate-200 bg-white">
-        <div className="px-6 py-5 text-xl font-bold text-sky-600">U-Bike</div>
+        <div className="px-5 py-5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="U-Bike" className="h-9 w-auto" />
+        </div>
         <nav className="flex-1 space-y-1 px-3">
           {NAV.map((item) => {
             const active = pathname === item.href;

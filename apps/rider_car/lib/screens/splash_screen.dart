@@ -7,19 +7,16 @@ class SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.primary,
+      backgroundColor: Colors.white,
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
-            Icon(Icons.directions_car, color: Colors.white, size: 64),
-            SizedBox(height: 12),
-            Text('U-Bike Rider',
-                style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.bold)),
-            SizedBox(height: 4),
-            Text('Move Better. Earn More.', style: TextStyle(color: Colors.white70)),
-            SizedBox(height: 24),
-            CircularProgressIndicator(color: Colors.white),
+          children: [
+            Image.asset('assets/logo.png', width: 220, fit: BoxFit.contain),
+            const SizedBox(height: 8),
+            const Text('Rider', style: TextStyle(color: AppTheme.green, fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 28),
+            const CircularProgressIndicator(color: AppTheme.primary),
           ],
         ),
       ),

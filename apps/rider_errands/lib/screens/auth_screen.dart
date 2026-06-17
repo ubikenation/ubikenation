@@ -68,7 +68,7 @@ class _AuthScreenState extends State<AuthScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const SizedBox(height: 24),
-                const Icon(Icons.shopping_bag, color: AppTheme.primary, size: 56),
+                Image.asset('assets/logo.png', height: 64, fit: BoxFit.contain),
                 const SizedBox(height: 8),
                 const Text('U-Bike Rider',
                     textAlign: TextAlign.center,

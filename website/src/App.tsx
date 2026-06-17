@@ -4,6 +4,7 @@ import { ArrowUpRight, Menu, X } from 'lucide-react';
 import ShinyText from './components/ShinyText';
 import Showcase from './components/Showcase';
 import Sections from './components/Sections';
+import DownloadModal from './components/DownloadModal';
 
 const NAV_LINKS = ['Home', 'About', 'Services', 'Pricing', 'Safety', 'Riders', 'Contact'];
 
@@ -22,9 +23,11 @@ const fadeUp = {
 
 export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
 
   return (
     <div className="relative w-full bg-black font-sans text-white">
+      <DownloadModal open={downloadOpen} onClose={() => setDownloadOpen(false)} />
       <section id="home" className="relative h-screen w-full overflow-hidden">
       {/* Background video */}
       <video
@@ -45,16 +48,15 @@ export default function App() {
         <header className="mx-auto w-full max-w-7xl px-5 py-5 sm:px-8">
           <nav className="flex items-center justify-between">
             <motion.a
-              href="#"
-              className="flex items-center gap-2"
+              href="#home"
+              className="flex items-center"
               variants={fadeUp}
               initial="hidden"
               animate="show"
             >
-              <span className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white">
-                <span className="h-2.5 w-2.5 rounded-full bg-white" />
+              <span className="rounded-xl bg-white px-2.5 py-1.5">
+                <img src="/logo.png" alt="U-Bike" className="h-6 w-auto" />
               </span>
-              <span className="text-lg font-semibold tracking-tight">U-Bike</span>
             </motion.a>
 
             <motion.div
@@ -158,9 +160,9 @@ export default function App() {
                 </span>
               </motion.h1>
 
-              <motion.a
-                href="#"
-                className="group mt-9 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black px-6 py-3 text-sm font-medium text-white transition hover:bg-gray-900 md:px-8 md:py-4 md:text-base"
+              <motion.button
+                onClick={() => setDownloadOpen(true)}
+                className="group mt-9 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white px-6 py-3 text-sm font-semibold text-black transition hover:bg-white/90 md:px-8 md:py-4 md:text-base"
                 variants={fadeUp}
                 initial="hidden"
                 animate="show"
@@ -168,7 +170,7 @@ export default function App() {
               >
                 Download the App
                 <ArrowUpRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-0.5" />
-              </motion.a>
+              </motion.button>
             </div>
           </div>
         </div>
@@ -185,7 +187,7 @@ export default function App() {
 
       {/* Photo showcase + content sections */}
       <Showcase />
-      <Sections />
+      <Sections onDownload={() => setDownloadOpen(true)} />
     </div>
   );
 }

@@ -54,7 +54,7 @@ const SAFETY = [
   { icon: Ban, text: 'Fraud detection on fare adjustments (max +30%, valid reasons only).' },
 ];
 
-export default function Sections() {
+export default function Sections({ onDownload }: { onDownload: () => void }) {
   return (
     <>
       {/* ABOUT */}
@@ -189,15 +189,15 @@ export default function Sections() {
             <span className="font-semibold text-leaf">The first 10 bike & 10 car riders register free.</span>
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <a href="#download" className="rounded-full bg-leaf px-6 py-3 text-sm font-semibold text-black transition hover:opacity-90">
+            <button onClick={onDownload} className="rounded-full bg-leaf px-6 py-3 text-sm font-semibold text-black transition hover:opacity-90">
               Download Bike Rider App
-            </a>
-            <a href="#download" className="rounded-full bg-brand px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90">
+            </button>
+            <button onClick={onDownload} className="rounded-full bg-brand px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90">
               Download Car Rider App
-            </a>
-            <a href="#download" className="rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10">
+            </button>
+            <button onClick={onDownload} className="rounded-full border border-white/20 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10">
               Errands Rider App
-            </a>
+            </button>
           </div>
         </motion.div>
       </Section>
@@ -211,10 +211,10 @@ export default function Sections() {
             sub="Available on Android. Reach out any time — we're here to help."
           />
           <div className="flex flex-col justify-center gap-4">
-            <a href="#" className="group inline-flex w-fit items-center gap-2 rounded-full bg-white px-7 py-4 text-sm font-semibold text-black transition hover:bg-white/90">
-              Download Passenger App
+            <button onClick={onDownload} className="group inline-flex w-fit items-center gap-2 rounded-full bg-white px-7 py-4 text-sm font-semibold text-black transition hover:bg-white/90">
+              Download All Apps
               <ArrowUpRight className="h-4 w-4 transition-transform group-hover:translate-x-1 group-hover:-translate-y-0.5" />
-            </a>
+            </button>
             <a href="mailto:support@ubike.co.ke" className="inline-flex w-fit items-center gap-2 text-sm text-white/70 transition hover:text-white">
               <Mail className="h-4 w-4" /> support@ubike.co.ke
             </a>
