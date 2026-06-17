@@ -1,0 +1,47 @@
+import dotenv from 'dotenv';
+import { z } from 'zod';
+
+dotenv.config();
+
+const schema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PORT: z.coerce.number().default(8080),
+
+  SUPABASE_URL: z.string().url(),
+  SUPABASE_ANON_KEY: z.string().min(10),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(10),
+
+  PAYSTACK_SECRET_KEY: z.string().min(10),
+  PAYSTACK_PUBLIC_KEY: z.string().min(10),
+  PAYSTACK_WEBHOOK_SECRET: z.string().optional().default(''),
+
+  GOOGLE_MAPS_API_KEY: z.string().optional().default(''),
+  MAPBOX_ACCESS_TOKEN: z.string().optional().default(''),
+  ORS_API_KEY: z.string().optional().default(''),
+
+  REDIS_URL: z.string().optional().default(''),
+
+  COMMISSION_RATE: z.coerce.number().min(0).max(1).default(0.2),
+  FOUNDING_BIKE_SLOTS: z.coerce.number().int().default(10),
+  FOUNDING_CAR_SLOTS: z.coerce.number().int().default(10),
+  BIKE_REGISTRATION_FEE: z.coerce.number().int().default(2000),
+  CAR_REGISTRATION_FEE: z.coerce.number().int().default(4000),
+  MAX_RIDER_PRICE_ADJUSTMENT: z.coerce.number().min(0).max(1).default(0.3),
+  UPFRONT_PAYMENT_RATIO: z.coerce.number().min(0).max(1).default(0.5),
+});
+
+const parsed = schema.safeParse(process.env);
+
+if (!parsed.success) {
+  // eslint-disable-next-line no-console
+  console.error('\n❌ Invalid environment configuration:\n');
+  for (const issue of parsed.error.issues) {
+    // eslint-disable-next-line no-console
+    console.error(`  • ${issue.path.join('.')}: ${issue.message}`);
+  }
+  console.error('\nCopy .env.example to .env and fill in the values.\n');
+  process.exit(1);
+}
+
+export const env = parsed.data;
+export const isProd = env.NODE_ENV === 'production';

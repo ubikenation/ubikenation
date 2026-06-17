@@ -1,0 +1,17 @@
+# Secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+*.pem
+*-firebase-adminsdk-*.json
+google-services*.json
+
+# Dependencies & build
+node_modules/
+dist/
+*.log
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
