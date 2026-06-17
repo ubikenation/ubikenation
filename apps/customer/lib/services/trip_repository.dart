@@ -49,14 +49,24 @@ class TripRepository {
   }
 
   /// Starts a Paystack checkout for the trip's upfront 50%.
-  Future<String> initiateUpfront(String tripId, int amount) async {
+  /// Returns the checkout URL + reference so the WebView can verify on completion.
+  Future<({String url, String reference})> initiateUpfront(String tripId, int amount) async {
     final data = await _api.post('/api/payments/initiate', {
       'purpose': 'trip_upfront',
       'amount': amount,
       'tripId': tripId,
+      'callbackUrl': paystackCallbackUrl,
     });
-    return (data as Map<String, dynamic>)['authorizationUrl'] as String;
+    final m = data as Map<String, dynamic>;
+    return (url: m['authorizationUrl'] as String, reference: m['reference'] as String);
   }
+
+  /// Confirms a payment with the backend (verifies against Paystack).
+  Future<void> verifyPayment(String reference) => _api.post('/api/payments/verify/$reference');
+
+  /// Sentinel URL Paystack redirects to after a successful checkout; the WebView
+  /// detects navigation to this host and closes.
+  static const String paystackCallbackUrl = 'https://ubike.app/paystack/callback';
 
   Future<Trip> getTrip(String tripId) async {
     final data = await _api.get('/api/trips/$tripId');

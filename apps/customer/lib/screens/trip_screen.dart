@@ -7,12 +7,11 @@ import '../models/models.dart';
 import '../services/trip_repository.dart';
 import '../theme/app_theme.dart';
 
-/// Shows the upfront-payment step, then polls the trip status through its
-/// lifecycle (searching → assigned → in progress → completed → rate).
+/// Polls the trip status through its lifecycle after the upfront payment:
+/// searching → assigned → in progress → completed → rate.
 class TripScreen extends StatefulWidget {
-  const TripScreen({super.key, required this.trip, required this.paymentUrl});
+  const TripScreen({super.key, required this.trip});
   final Trip trip;
-  final String paymentUrl;
 
   @override
   State<TripScreen> createState() => _TripScreenState();
@@ -72,7 +71,7 @@ class _TripScreenState extends State<TripScreen> {
   Widget _body() {
     switch (_trip.status) {
       case 'pending_payment':
-        return _PaymentStep(url: widget.paymentUrl, upfront: _trip.upfront, onPaid: _refresh);
+        return _statusBlock(Icons.lock_clock, 'Confirming your payment…');
       case 'searching':
         return _statusBlock(Icons.search, 'Finding you a nearby rider…', showCancel: true);
       case 'rider_assigned':
@@ -131,31 +130,3 @@ class _TripScreenState extends State<TripScreen> {
   }
 }
 
-class _PaymentStep extends StatelessWidget {
-  const _PaymentStep({required this.url, required this.upfront, required this.onPaid});
-  final String url;
-  final int upfront;
-  final Future<void> Function() onPaid;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(Icons.lock, size: 56, color: AppTheme.primary),
-        const SizedBox(height: 12),
-        Text('Pay KES $upfront (50%) to confirm',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        const Text('Secure checkout via Paystack', style: TextStyle(color: AppTheme.muted)),
-        const SizedBox(height: 24),
-        SelectableText(url, style: const TextStyle(fontSize: 12, color: AppTheme.primaryDark)),
-        const Spacer(),
-        FilledButton(
-          onPressed: onPaid,
-          child: const Text("I've paid — continue"),
-        ),
-      ],
-    );
-  }
-}

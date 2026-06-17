@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../services/trip_repository.dart';
 import '../theme/app_theme.dart';
+import 'paystack_webview.dart';
 import 'trip_screen.dart';
 
 /// Collects pickup + destination, gets a fare estimate, then creates the trip
@@ -83,11 +85,28 @@ class _BookingScreenState extends State<BookingScreen> {
         distanceKm: double.parse(_distanceKm.toStringAsFixed(2)),
         durationMin: double.parse(_durationMin.toStringAsFixed(1)),
       );
-      final payUrl = await repo.initiateUpfront(trip.id, trip.upfront);
+      final checkout = await repo.initiateUpfront(trip.id, trip.upfront);
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => TripScreen(trip: trip, paymentUrl: payUrl)),
+
+      // Embedded Paystack checkout; returns true when payment completes.
+      final paid = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => PaystackWebView(url: checkout.url, callbackUrl: TripRepository.paystackCallbackUrl),
+        ),
       );
+
+      if (paid == true) {
+        await repo.verifyPayment(checkout.reference);
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(builder: (_) => TripScreen(trip: trip)),
+        );
+      } else {
+        setState(() {
+          _error = 'Payment was not completed. You can try again.';
+          _busy = false;
+        });
+      }
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -105,6 +124,25 @@ class _BookingScreenState extends State<BookingScreen> {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: SizedBox(
+                height: 200,
+                child: GoogleMap(
+                  initialCameraPosition: CameraPosition(
+                    target: LatLng((_pickupLat + _dropLat) / 2, (_pickupLng + _dropLng) / 2),
+                    zoom: 12,
+                  ),
+                  markers: {
+                    Marker(markerId: const MarkerId('pickup'), position: LatLng(_pickupLat, _pickupLng), infoWindow: const InfoWindow(title: 'Pickup')),
+                    Marker(markerId: const MarkerId('dropoff'), position: LatLng(_dropLat, _dropLng), infoWindow: const InfoWindow(title: 'Destination')),
+                  },
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: false,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             _LocationField(controller: _pickupCtrl, icon: Icons.my_location, label: 'Pickup'),
             const SizedBox(height: 12),
             _LocationField(controller: _dropCtrl, icon: Icons.location_on, label: 'Destination'),
