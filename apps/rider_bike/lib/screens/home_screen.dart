@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
@@ -11,8 +12,8 @@ import '../theme/app_theme.dart';
 import 'active_trip_screen.dart';
 import 'earnings_screen.dart';
 
-/// Rider home: online toggle + live list of nearby trips to accept.
-/// Enforces the "must stay online during a trip" rule via the active trip screen.
+/// Bolt-driver-style home: a full-screen map with an online toggle and live
+/// trip requests in a floating bottom sheet.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -21,6 +22,11 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
+  GoogleMapController? _map;
+  static const LatLng _nairobi = LatLng(-1.2921, 36.8219);
+  LatLng _me = _nairobi;
+
   bool _online = false;
   bool _busy = false;
   String? _error;
@@ -29,10 +35,29 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? _locationTimer;
 
   @override
+  void initState() {
+    super.initState();
+    _locate();
+  }
+
+  @override
   void dispose() {
     _poll?.cancel();
     _locationTimer?.cancel();
+    _map?.dispose();
     super.dispose();
+  }
+
+  Future<void> _locate() async {
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return;
+      final pos = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      setState(() => _me = LatLng(pos.latitude, pos.longitude));
+      await _map?.animateCamera(CameraUpdate.newLatLngZoom(_me, 15));
+    } catch (_) {}
   }
 
   Future<void> _toggleOnline(bool value) async {
@@ -65,17 +90,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final repo = context.read<RiderRepository>();
     try {
       var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-        return;
-      }
+      if (permission == LocationPermission.denied) permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) return;
       final pos = await Geolocator.getCurrentPosition();
+      if (mounted) setState(() => _me = LatLng(pos.latitude, pos.longitude));
       await repo.pushLocation(pos.latitude, pos.longitude);
-    } catch (_) {
-      // location unavailable; skip this ping
-    }
+    } catch (_) {}
   }
 
   Future<void> _loadTrips() async {
@@ -91,9 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await context.read<RiderRepository>().accept(trip.id);
       if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ActiveTripScreen(tripId: trip.id)),
-      );
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => ActiveTripScreen(tripId: trip.id)));
       await _loadTrips();
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -103,95 +121,158 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('U-Bike Rider'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const EarningsScreen()),
+      key: _scaffoldKey,
+      drawer: const _Menu(),
+      body: Stack(
+        children: [
+          GoogleMap(
+            initialCameraPosition: const CameraPosition(target: _nairobi, zoom: 14),
+            myLocationEnabled: true,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            compassEnabled: false,
+            onMapCreated: (c) {
+              _map = c;
+              _map?.animateCamera(CameraUpdate.newLatLngZoom(_me, 15));
+            },
+          ),
+
+          // Top controls
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  _circle(Icons.menu, () => _scaffoldKey.currentState?.openDrawer()),
+                  const Spacer(),
+                  _statusPill(),
+                  const Spacer(),
+                  _circle(Icons.account_balance_wallet_outlined, () {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EarningsScreen()));
+                  }),
+                ],
+              ),
             ),
           ),
-          IconButton(icon: const Icon(Icons.logout), onPressed: () => context.read<AuthService>().signOut()),
+
+          Positioned(right: 16, bottom: 280, child: _circle(Icons.my_location, _locate)),
+
+          Align(alignment: Alignment.bottomCenter, child: _sheet()),
         ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _onlineBar(),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Text(_error!, style: const TextStyle(color: AppTheme.red)),
-              ),
-            Expanded(child: _online ? _tripList() : _offlinePlaceholder()),
-          ],
-        ),
       ),
     );
   }
 
-  Widget _onlineBar() {
+  Widget _statusPill() {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: _online ? const Color(0xFFE9F7EE) : AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _online ? AppTheme.green : Colors.black12),
+        color: _online ? AppTheme.green : Colors.white,
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(_online ? Icons.bolt : Icons.power_settings_new,
-              color: _online ? AppTheme.green : AppTheme.muted),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(_online ? "You're online — receiving trips" : "You're offline",
-                style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.ink)),
-          ),
-          if (_busy)
-            const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-          else
-            Switch(value: _online, activeThumbColor: AppTheme.green, onChanged: _toggleOnline),
+              size: 16, color: _online ? Colors.white : AppTheme.muted),
+          const SizedBox(width: 6),
+          Text(_online ? 'Online' : 'Offline',
+              style: TextStyle(fontWeight: FontWeight.w600, color: _online ? Colors.white : AppTheme.muted)),
         ],
       ),
     );
   }
 
-  Widget _offlinePlaceholder() {
-    return const Center(
-      child: Padding(
-        padding: EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.two_wheeler, size: 64, color: AppTheme.muted),
-            SizedBox(height: 12),
-            Text('Go online to start receiving trip requests',
-                textAlign: TextAlign.center, style: TextStyle(color: AppTheme.muted)),
-          ],
-        ),
+  Widget _circle(IconData icon, VoidCallback onTap) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 4,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(padding: const EdgeInsets.all(11), child: Icon(icon, color: AppTheme.ink)),
+      ),
+    );
+  }
+
+  Widget _sheet() {
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 420),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 16, offset: Offset(0, -4))],
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 42, height: 4,
+              decoration: BoxDecoration(color: Colors.black12, borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Text(_online ? "You're online — earning enabled" : "You're offline",
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.ink)),
+              ),
+              if (_busy)
+                const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
+              else
+                Switch(value: _online, activeThumbColor: AppTheme.green, onChanged: _toggleOnline),
+            ],
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(_error!, style: const TextStyle(color: AppTheme.red, fontSize: 13)),
+            ),
+          const SizedBox(height: 8),
+          Flexible(child: _online ? _tripList() : _offline()),
+        ],
+      ),
+    );
+  }
+
+  Widget _offline() {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 24),
+      child: Column(
+        children: [
+          Icon(Icons.toggle_on, size: 48, color: AppTheme.muted),
+          SizedBox(height: 8),
+          Text('Go online to start receiving trip requests', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.muted)),
+        ],
       ),
     );
   }
 
   Widget _tripList() {
     if (_trips.isEmpty) {
-      return const Center(
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
             CircularProgressIndicator(color: AppTheme.primary),
-            SizedBox(height: 16),
+            SizedBox(height: 14),
             Text('Waiting for nearby trips…', style: TextStyle(color: AppTheme.muted)),
           ],
         ),
       );
     }
     return ListView.separated(
-      padding: const EdgeInsets.all(16),
+      shrinkWrap: true,
+      padding: const EdgeInsets.only(top: 4),
       itemCount: _trips.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 12),
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (_, i) => _TripCard(trip: _trips[i], onAccept: () => _accept(_trips[i])),
     );
   }
@@ -205,12 +286,11 @@ class _TripCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.black12),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -218,20 +298,15 @@ class _TripCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('KES ${trip.fare}',
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.green)),
+              Text('KES ${trip.fare}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.green)),
               if (trip.pickupDistanceKm != null)
-                Text('${trip.pickupDistanceKm!.toStringAsFixed(1)} km away',
-                    style: const TextStyle(color: AppTheme.muted)),
+                Text('${trip.pickupDistanceKm!.toStringAsFixed(1)} km away', style: const TextStyle(color: AppTheme.muted)),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           _line(Icons.my_location, trip.pickupAddress ?? 'Pickup'),
           _line(Icons.location_on, trip.dropoffAddress ?? 'Destination'),
-          const SizedBox(height: 4),
-          Text('${trip.distanceKm.toStringAsFixed(1)} km • ${trip.durationMin.toStringAsFixed(0)} min',
-              style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           SizedBox(width: double.infinity, child: FilledButton(onPressed: onAccept, child: const Text('Accept'))),
         ],
       ),
@@ -240,12 +315,58 @@ class _TripCard extends StatelessWidget {
 
   Widget _line(IconData icon, String text) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Row(
+        child: Row(children: [
+          Icon(icon, size: 16, color: AppTheme.primary),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        ]),
+      );
+}
+
+class _Menu extends StatelessWidget {
+  const _Menu();
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.read<AuthService>();
+    final name = auth.currentUser?.userMetadata?['full_name'] as String? ?? 'Rider';
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 16, color: AppTheme.primary),
-            const SizedBox(width: 8),
-            Expanded(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis)),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Image.asset('assets/logo.png', height: 30),
+                  const SizedBox(height: 12),
+                  Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.ink)),
+                  Text(auth.currentUser?.email ?? '', style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
+                ],
+              ),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.account_balance_wallet_outlined),
+              title: const Text('Earnings'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EarningsScreen()));
+              },
+            ),
+            const ListTile(leading: Icon(Icons.help_outline), title: Text('Support')),
+            const Spacer(),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.logout, color: AppTheme.muted),
+              title: const Text('Log out'),
+              onTap: () => auth.signOut(),
+            ),
           ],
         ),
-      );
+      ),
+    );
+  }
 }
