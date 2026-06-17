@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { ArrowUpRight, Menu, X } from 'lucide-react';
 import ShinyText from './components/ShinyText';
 import Showcase from './components/Showcase';
+import Sections from './components/Sections';
 
 const NAV_LINKS = ['Home', 'About', 'Services', 'Pricing', 'Safety', 'Riders', 'Contact'];
 
@@ -24,7 +25,7 @@ export default function App() {
 
   return (
     <div className="relative w-full bg-black font-sans text-white">
-      <section className="relative h-screen w-full overflow-hidden">
+      <section id="home" className="relative h-screen w-full overflow-hidden">
       {/* Background video */}
       <video
         className="absolute inset-0 h-full w-full object-cover"
@@ -66,7 +67,7 @@ export default function App() {
               {NAV_LINKS.map((link) => (
                 <a
                   key={link}
-                  href="#"
+                  href={`#${link.toLowerCase()}`}
                   className="flex items-center gap-1 rounded-full px-3.5 py-1.5 text-sm text-white/80 transition hover:bg-white/10 hover:text-white"
                 >
                   {link}
@@ -92,7 +93,12 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
             >
               {NAV_LINKS.map((link) => (
-                <a key={link} href="#" className="rounded-lg px-3 py-2 text-sm text-white/80 hover:bg-white/10 hover:text-white">
+                <a
+                  key={link}
+                  href={`#${link.toLowerCase()}`}
+                  onClick={() => setMenuOpen(false)}
+                  className="rounded-lg px-3 py-2 text-sm text-white/80 hover:bg-white/10 hover:text-white"
+                >
                   {link}
                 </a>
               ))}
@@ -167,18 +173,19 @@ export default function App() {
           </div>
         </div>
 
-        {/* Footer strip */}
+        {/* Scroll hint */}
         <div className="mx-auto w-full max-w-7xl px-5 pb-6 sm:px-8">
-          <div className="flex flex-col items-center justify-between gap-2 border-t border-white/10 pt-4 text-xs text-white/60 sm:flex-row">
-            <span>© 2026 U-Bike. Move Better. Earn More.</span>
-            <span>Secure payments by Paystack · Operating in Kenya</span>
-          </div>
+          <a href="#about" className="mx-auto flex w-fit items-center gap-2 text-xs text-white/50 transition hover:text-white">
+            Scroll to explore
+            <span className="inline-block animate-bounce">↓</span>
+          </a>
         </div>
       </div>
       </section>
 
-      {/* Photo showcase */}
+      {/* Photo showcase + content sections */}
       <Showcase />
+      <Sections />
     </div>
   );
 }
