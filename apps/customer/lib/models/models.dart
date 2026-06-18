@@ -7,6 +7,7 @@ class ServiceCategory {
   final String tripType; // bike | car | errands | scheduled
   final int minFare;
   final IconData icon;
+  final String asset; // custom png icon
 
   const ServiceCategory({
     required this.id,
@@ -14,15 +15,16 @@ class ServiceCategory {
     required this.tripType,
     required this.minFare,
     required this.icon,
+    required this.asset,
   });
 
   static const List<ServiceCategory> all = [
-    ServiceCategory(id: 'standard_bike', label: 'Standard Bike', tripType: 'bike', minFare: 120, icon: Icons.pedal_bike),
-    ServiceCategory(id: 'electric_bike', label: 'Electric Bike', tripType: 'bike', minFare: 150, icon: Icons.electric_bike),
-    ServiceCategory(id: 'economy', label: 'Economy', tripType: 'car', minFare: 300, icon: Icons.directions_car),
-    ServiceCategory(id: 'comfort', label: 'Comfort', tripType: 'car', minFare: 450, icon: Icons.local_taxi),
-    ServiceCategory(id: 'suv', label: 'SUV', tripType: 'car', minFare: 600, icon: Icons.airport_shuttle),
-    ServiceCategory(id: 'errands', label: 'Errands', tripType: 'errands', minFare: 300, icon: Icons.shopping_bag),
+    ServiceCategory(id: 'standard_bike', label: 'Standard Bike', tripType: 'bike', minFare: 120, icon: Icons.pedal_bike, asset: 'assets/icons/standard_bike.png'),
+    ServiceCategory(id: 'electric_bike', label: 'Electric Bike', tripType: 'bike', minFare: 150, icon: Icons.electric_bike, asset: 'assets/icons/electric_bike.png'),
+    ServiceCategory(id: 'economy', label: 'Economy', tripType: 'car', minFare: 300, icon: Icons.directions_car, asset: 'assets/icons/economy.png'),
+    ServiceCategory(id: 'comfort', label: 'Comfort', tripType: 'car', minFare: 450, icon: Icons.local_taxi, asset: 'assets/icons/comfort.png'),
+    ServiceCategory(id: 'suv', label: 'SUV', tripType: 'car', minFare: 600, icon: Icons.airport_shuttle, asset: 'assets/icons/suv.png'),
+    ServiceCategory(id: 'errands', label: 'Errands', tripType: 'errands', minFare: 300, icon: Icons.shopping_bag, asset: 'assets/icons/errands.png'),
   ];
 }
 

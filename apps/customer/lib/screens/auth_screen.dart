@@ -42,6 +42,7 @@ class _AuthScreenState extends State<AuthScreen> {
     }
     if (m.contains('Invalid login credentials')) return 'Wrong email or password.';
     if (m.contains('User already registered')) return 'That email already has an account. Try logging in.';
+    if (m.contains('Database error') || m.contains('duplicate') || m.contains('unique') || m.contains('already registered')) return 'This email or phone number is already in use. Please log in instead.';
     if (m.contains('SocketException') || m.contains('Failed host lookup')) {
       return 'No internet connection. Turn on data or Wi-Fi and try again.';
     }

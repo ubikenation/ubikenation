@@ -22,7 +22,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final MapController _map = MapController();
-  static const LatLng _nairobi = LatLng(-1.2921, 36.8219);
+  static const LatLng _nairobi = LatLng(0.0463, 37.6559);
   LatLng _me = _nairobi;
 
   @override

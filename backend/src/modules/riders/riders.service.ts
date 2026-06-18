@@ -79,6 +79,86 @@ export async function submitDocuments(profileId: string, kind: RiderKind, docs: 
   return { complete, feePaid, status: complete && feePaid ? 'under_review' : 'submitted' };
 }
 
+/**
+ * Records a KES 0 registration "payment" for a founding (free) rider and marks
+ * them as paid, so they go through the same pay-then-submit flow. Paystack cannot
+ * charge zero, so this is recorded directly as a successful KES 0 transaction.
+ */
+export async function confirmFreeRegistration(profileId: string, kind: RiderKind) {
+  const { data: rider } = await supabaseAdmin
+    .from('riders')
+    .select('id, registration_fee, registration_paid')
+    .eq('profile_id', profileId)
+    .eq('kind', kind)
+    .maybeSingle();
+  if (!rider) throw notFound('register first');
+  if (rider.registration_fee !== 0) {
+    throw badRequest('this rider has a registration fee and must pay via Paystack');
+  }
+  if (rider.registration_paid) return { ok: true, alreadyPaid: true };
+
+  const { data: payment } = await supabaseAdmin
+    .from('payments')
+    .insert({
+      profile_id: profileId,
+      purpose: 'rider_registration',
+      amount: 0,
+      status: 'success',
+      paystack_ref: `free_${rider.id}`,
+    })
+    .select('id')
+    .single();
+
+  await supabaseAdmin
+    .from('riders')
+    .update({ registration_paid: true, registration_payment_id: payment?.id ?? null })
+    .eq('id', rider.id);
+
+  return { ok: true, amount: 0 };
+}
+
+/**
+ * Saves detailed rider info: personal details (jsonb on riders.details), the
+ * M-Pesa number on the profile, and structured vehicle info in the vehicles table.
+ */
+export async function submitDetails(
+  profileId: string,
+  kind: RiderKind,
+  details: Record<string, unknown>,
+  vehicle: Record<string, unknown> | null,
+) {
+  const { data: rider } = await supabaseAdmin
+    .from('riders')
+    .select('id')
+    .eq('profile_id', profileId)
+    .eq('kind', kind)
+    .maybeSingle();
+  if (!rider) throw notFound('register first');
+
+  await supabaseAdmin.from('riders').update({ details }).eq('id', rider.id);
+
+  // Keep the profile's M-Pesa number / name in sync if provided.
+  const profilePatch: Record<string, unknown> = {};
+  if (typeof details.mpesa === 'string') profilePatch.mpesa_number = details.mpesa;
+  if (typeof details.phone === 'string') profilePatch.phone = details.phone;
+  if (typeof details.fullName === 'string') profilePatch.full_name = details.fullName;
+  if (Object.keys(profilePatch).length) {
+    await supabaseAdmin.from('profiles').update(profilePatch).eq('id', profileId);
+  }
+
+  if (vehicle && Object.keys(vehicle).length) {
+    await supabaseAdmin.from('vehicles').insert({
+      rider_id: rider.id,
+      vehicle_class: (vehicle.vehicleClass as string) ?? (kind === 'car' ? 'economy' : 'standard_bike'),
+      plate_number: vehicle.plate as string | undefined,
+      make: vehicle.make as string | undefined,
+      model: vehicle.model as string | undefined,
+      color: vehicle.color as string | undefined,
+    });
+  }
+  return { ok: true };
+}
+
 export async function setOnline(profileId: string, isOnline: boolean) {
   const { data: rider } = await supabaseAdmin
     .from('riders')

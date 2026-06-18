@@ -109,6 +109,7 @@ class _TripScreenState extends State<TripScreen> {
 
     final name = loc['riderName'] as String? ?? 'Your rider';
     final rating = (loc['rating'] as num?)?.toDouble() ?? 5.0;
+    final photo = loc['riderPhoto'] as String?;
 
     return Column(
       children: [
@@ -149,7 +150,12 @@ class _TripScreenState extends State<TripScreen> {
               const SizedBox(height: 14),
               Row(
                 children: [
-                  const CircleAvatar(radius: 22, backgroundColor: AppTheme.surface, child: Icon(Icons.person, color: AppTheme.primary)),
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundColor: AppTheme.surface,
+                    backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
+                    child: (photo == null || photo.isEmpty) ? const Icon(Icons.person, color: AppTheme.primary) : null,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(

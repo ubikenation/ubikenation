@@ -28,7 +28,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final MapController _map = MapController();
-  static const LatLng _nairobi = LatLng(-1.2921, 36.8219);
+  static const LatLng _nairobi = LatLng(0.0463, 37.6559);
   LatLng _me = _nairobi;
 
   bool _ready = false;
@@ -333,7 +333,27 @@ class _Menu extends StatelessWidget {
                 Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EarningsScreen()));
               },
             ),
-            const ListTile(leading: Icon(Icons.help_outline), title: Text('Support')),
+            ListTile(
+              leading: const Icon(Icons.help_outline),
+              title: const Text('Support'),
+              onTap: () {
+                Navigator.pop(context);
+                showDialog<void>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Rider Support'),
+                    content: const Text(
+                      'Need help?\n\n'
+                      '• Keep data/Wi-Fi and GPS on for the whole trip — going offline mid-trip is a violation.\n'
+                      '• You keep 80% of every trip; payouts hit your M-Pesa in 24–48h.\n'
+                      '• You may adjust a fare up to 30% with a valid reason only.\n\n'
+                      'Contact: support@ubike.co.ke',
+                    ),
+                    actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))],
+                  ),
+                );
+              },
+            ),
             const Spacer(),
             const Divider(),
             ListTile(

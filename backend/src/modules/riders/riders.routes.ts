@@ -3,8 +3,8 @@ import { z } from 'zod';
 import { handler, ok } from '../../utils/http';
 import { requireAuth } from '../../middleware/auth';
 import {
-  getRiderStatus, quoteRegistrationFee, registerRider, reportViolation,
-  setOnline, submitDocuments, updateLocation,
+  confirmFreeRegistration, getRiderStatus, quoteRegistrationFee, registerRider, reportViolation,
+  setOnline, submitDetails, submitDocuments, updateLocation,
 } from './riders.service';
 
 export const ridersRouter = Router();
@@ -28,6 +28,24 @@ ridersRouter.post('/documents', requireAuth, handler(async (req, res) => {
     .object({ kind: kindSchema, documents: z.record(z.string()) })
     .parse(req.body);
   ok(res, await submitDocuments(req.user!.id, kind, documents));
+}));
+
+// POST /api/riders/details — detailed personal + vehicle info.
+ridersRouter.post('/details', requireAuth, handler(async (req, res) => {
+  const { kind, details, vehicle } = z
+    .object({
+      kind: kindSchema,
+      details: z.record(z.unknown()),
+      vehicle: z.record(z.unknown()).nullable().optional(),
+    })
+    .parse(req.body);
+  ok(res, await submitDetails(req.user!.id, kind, details, vehicle ?? null));
+}));
+
+// POST /api/riders/free-registration — record a KES 0 founding-rider registration.
+ridersRouter.post('/free-registration', requireAuth, handler(async (req, res) => {
+  const { kind } = z.object({ kind: kindSchema }).parse(req.body);
+  ok(res, await confirmFreeRegistration(req.user!.id, kind));
 }));
 
 // POST /api/riders/online — go online/offline (activated riders only).

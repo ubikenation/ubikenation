@@ -304,7 +304,7 @@ class _BookingScreenState extends State<BookingScreen> {
           ),
           child: Row(
             children: [
-              Icon(c.icon, color: AppTheme.primary, size: 30),
+              Image.asset(c.asset, width: 40, height: 40, fit: BoxFit.contain),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(

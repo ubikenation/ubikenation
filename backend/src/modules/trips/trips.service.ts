@@ -180,7 +180,49 @@ export async function completeTrip(tripId: string, riderProfileId: string) {
     .update({ status: 'completed', completed_at: new Date().toISOString() })
     .eq('id', tripId);
   const split = await releaseEscrow(tripId);
+  await autoGradeRider(tripId);
   return { status: 'completed', split };
+}
+
+/**
+ * Automatically grades the rider when a trip completes (5 stars baseline, minus
+ * one star per violation logged on this trip). This guarantees every completed
+ * trip updates the rider's rating even if the customer doesn't rate manually. A
+ * later customer rating overrides this entry.
+ */
+async function autoGradeRider(tripId: string) {
+  const { data: trip } = await supabaseAdmin
+    .from('trips')
+    .select('id, customer_id, rider_id')
+    .eq('id', tripId)
+    .single();
+  if (!trip?.rider_id) return;
+
+  // Don't overwrite an existing (customer) rating.
+  const { data: existing } = await supabaseAdmin.from('ratings').select('id').eq('trip_id', tripId).maybeSingle();
+  if (existing) return;
+
+  const { count: violations } = await supabaseAdmin
+    .from('rider_violations')
+    .select('id', { count: 'exact', head: true })
+    .eq('rider_id', trip.rider_id)
+    .eq('trip_id', tripId);
+  const stars = Math.max(1, 5 - (violations ?? 0));
+
+  await supabaseAdmin.from('ratings').upsert(
+    { trip_id: tripId, customer_id: trip.customer_id, rider_id: trip.rider_id, stars, comment: 'Auto-graded by system' },
+    { onConflict: 'trip_id' },
+  );
+  const { data: rider } = await supabaseAdmin
+    .from('riders')
+    .select('rating_avg, rating_count')
+    .eq('id', trip.rider_id)
+    .single();
+  if (rider) {
+    const c = rider.rating_count + 1;
+    const avg = (Number(rider.rating_avg) * rider.rating_count + stars) / c;
+    await supabaseAdmin.from('riders').update({ rating_avg: Math.round(avg * 100) / 100, rating_count: c }).eq('id', trip.rider_id);
+  }
 }
 
 /** Customer cancels. Before start → 100% refund; after start → blocked (dispute path). */
@@ -257,8 +299,12 @@ export async function listAvailableTrips(riderProfileId: string) {
 
   const list = trips ?? [];
   if (rider.last_lat == null || rider.last_lng == null) return list;
+  // Only surface trips whose pickup is within range of this rider, nearest first.
+  // The closest rider in range gets first sight of the request.
+  const RADIUS_KM = 7;
   return list
     .map((t) => ({ ...t, pickupDistanceKm: haversineKm(rider.last_lat!, rider.last_lng!, t.pickup_lat, t.pickup_lng) }))
+    .filter((t) => t.pickupDistanceKm <= RADIUS_KM)
     .sort((a, b) => a.pickupDistanceKm - b.pickupDistanceKm);
 }
 
@@ -296,18 +342,27 @@ export async function getRiderLocation(tripId: string, userId: string) {
 
   const { data: rider } = await supabaseAdmin
     .from('riders')
-    .select('last_lat, last_lng, last_location_at, rating_avg, rating_count, profile_id')
+    .select('last_lat, last_lng, last_location_at, rating_avg, rating_count, profile_id, profile_photo_url, selfie_url')
     .eq('id', trip.rider_id)
     .single();
   const { data: prof } = await supabaseAdmin
     .from('profiles')
-    .select('full_name')
+    .select('full_name, avatar_url')
     .eq('id', rider?.profile_id ?? '')
     .maybeSingle();
+
+  // Signed URL for the rider's profile photo (private bucket), for the chat/tracking UI.
+  let photoUrl: string | null = prof?.avatar_url ?? null;
+  const photoPath = rider?.profile_photo_url ?? rider?.selfie_url;
+  if (!photoUrl && photoPath) {
+    const { data: signed } = await supabaseAdmin.storage.from('rider-documents').createSignedUrl(photoPath, 60 * 60);
+    photoUrl = signed?.signedUrl ?? null;
+  }
 
   return {
     hasRider: true,
     riderName: prof?.full_name ?? 'Your rider',
+    riderPhoto: photoUrl,
     rating: Number(rider?.rating_avg ?? 5),
     ratingCount: rider?.rating_count ?? 0,
     riderLat: rider?.last_lat ?? null,
