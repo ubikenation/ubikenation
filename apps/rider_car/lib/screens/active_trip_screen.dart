@@ -1,12 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../services/rider_repository.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_map.dart';
 
 /// The accepted-trip workflow: adjust fare (≤30%, approved reason) → arrived →
 /// start → complete. Reinforces the "stay online during the trip" rule.
@@ -143,15 +144,14 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
           borderRadius: BorderRadius.circular(16),
           child: SizedBox(
             height: 180,
-            child: GoogleMap(
-              initialCameraPosition: CameraPosition(target: LatLng((pLat + dLat) / 2, (pLng + dLng) / 2), zoom: 12),
-              markers: {
-                Marker(markerId: const MarkerId('pickup'), position: LatLng(pLat, pLng), infoWindow: const InfoWindow(title: 'Pickup')),
-                Marker(markerId: const MarkerId('dropoff'), position: LatLng(dLat, dLng), infoWindow: const InfoWindow(title: 'Destination')),
-              },
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              liteModeEnabled: true,
+            child: AppMap(
+              center: LatLng((pLat + dLat) / 2, (pLng + dLng) / 2),
+              zoom: 12,
+              interactive: false,
+              markers: [
+                MapMarker(LatLng(pLat, pLng), color: AppTheme.primary, icon: Icons.my_location),
+                MapMarker(LatLng(dLat, dLng), color: AppTheme.green, icon: Icons.location_pin),
+              ],
             ),
           ),
         ),

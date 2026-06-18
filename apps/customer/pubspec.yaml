@@ -35,8 +35,9 @@ dependencies:
   supabase_flutter: ^2.8.0      # auth + realtime + storage
   http: ^1.2.2                  # backend API client
   provider: ^6.1.2              # state management
-  geolocator: ^13.0.1           # GPS / device location
-  google_maps_flutter: ^2.9.0   # maps
+  geolocator: ^13.0.1
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1           # GPS / device location
   webview_flutter: ^4.10.0      # embedded Paystack checkout
   intl: ^0.19.0
   connectivity_plus: ^6.1.0                 # currency / date formatting

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_map.dart';
 import 'booking_screen.dart';
 
 /// Bolt-style home: a full-screen map with a floating bottom sheet to pick a
@@ -19,7 +21,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  GoogleMapController? _map;
+  final MapController _map = MapController();
   static const LatLng _nairobi = LatLng(-1.2921, 36.8219);
   LatLng _me = _nairobi;
 
@@ -27,12 +29,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _locate();
-  }
-
-  @override
-  void dispose() {
-    _map?.dispose();
-    super.dispose();
   }
 
   Future<void> _locate() async {
@@ -43,9 +39,17 @@ class _HomeScreenState extends State<HomeScreen> {
       final pos = await Geolocator.getCurrentPosition();
       if (!mounted) return;
       setState(() => _me = LatLng(pos.latitude, pos.longitude));
-      await _map?.animateCamera(CameraUpdate.newLatLngZoom(_me, 15.5));
+      _moveToMe();
     } catch (_) {
       // location unavailable — keep the default city view
+    }
+  }
+
+  void _moveToMe() {
+    try {
+      _map.move(_me, 15.5);
+    } catch (_) {
+      // map not ready yet — onMapReady will recentre
     }
   }
 
@@ -62,16 +66,12 @@ class _HomeScreenState extends State<HomeScreen> {
       drawer: _Menu(name: name),
       body: Stack(
         children: [
-          GoogleMap(
-            initialCameraPosition: const CameraPosition(target: _nairobi, zoom: 14),
-            myLocationEnabled: true,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            compassEnabled: false,
-            onMapCreated: (c) {
-              _map = c;
-              _map?.animateCamera(CameraUpdate.newLatLngZoom(_me, 15.5));
-            },
+          AppMap(
+            center: _nairobi,
+            zoom: 14,
+            controller: _map,
+            markers: [MapMarker(_me, color: AppTheme.primary, icon: Icons.my_location)],
+            onMapReady: _moveToMe,
           ),
 
           // Top floating controls

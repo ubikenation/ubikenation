@@ -1,12 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../services/trip_repository.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_map.dart';
 import 'paystack_webview.dart';
 import 'trip_screen.dart';
 
@@ -128,17 +129,13 @@ class _BookingScreenState extends State<BookingScreen> {
               borderRadius: BorderRadius.circular(16),
               child: SizedBox(
                 height: 280,
-                child: GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: LatLng((_pickupLat + _dropLat) / 2, (_pickupLng + _dropLng) / 2),
-                    zoom: 12,
-                  ),
-                  markers: {
-                    Marker(markerId: const MarkerId('pickup'), position: LatLng(_pickupLat, _pickupLng), infoWindow: const InfoWindow(title: 'Pickup')),
-                    Marker(markerId: const MarkerId('dropoff'), position: LatLng(_dropLat, _dropLng), infoWindow: const InfoWindow(title: 'Destination')),
-                  },
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
+                child: AppMap(
+                  center: LatLng((_pickupLat + _dropLat) / 2, (_pickupLng + _dropLng) / 2),
+                  zoom: 12,
+                  markers: [
+                    MapMarker(LatLng(_pickupLat, _pickupLng), color: AppTheme.primary, icon: Icons.my_location),
+                    MapMarker(LatLng(_dropLat, _dropLng), color: AppTheme.accent, icon: Icons.location_pin),
+                  ],
                 ),
               ),
             ),
