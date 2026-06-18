@@ -21,7 +21,7 @@ export default function LoginPage() {
       setError(error.message);
       return;
     }
-    router.replace('/dashboard');
+    router.replace('/aaddmmiinn');
   }
 
   return (

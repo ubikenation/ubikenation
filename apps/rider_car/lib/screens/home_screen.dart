@@ -14,8 +14,10 @@ import '../widgets/app_map.dart';
 import 'active_trip_screen.dart';
 import 'earnings_screen.dart';
 
-/// Bolt-driver-style home: a full-screen map with an online toggle and live
-/// trip requests in a floating bottom sheet.
+/// Bolt-driver-style home. The rider is automatically ONLINE whenever the app is
+/// open and connected (enforced app-wide by the connectivity gate) — there is no
+/// manual offline switch. Losing data/Wi-Fi during a trip is a bannable offence,
+/// handled on the active-trip screen.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -29,8 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   static const LatLng _nairobi = LatLng(-1.2921, 36.8219);
   LatLng _me = _nairobi;
 
-  bool _online = false;
-  bool _busy = false;
+  bool _ready = false;
   String? _error;
   List<AvailableTrip> _trips = [];
   Timer? _poll;
@@ -40,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _locate();
+    _goOnline();
   }
 
   @override
@@ -67,29 +69,19 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  Future<void> _toggleOnline(bool value) async {
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
+  /// Automatically goes online and starts receiving requests + pushing location.
+  Future<void> _goOnline() async {
     try {
       final repo = context.read<RiderRepository>();
-      await repo.setOnline(value);
-      setState(() => _online = value);
-      if (value) {
-        await _pushLocation();
-        _poll = Timer.periodic(const Duration(seconds: 6), (_) => _loadTrips());
-        _locationTimer = Timer.periodic(const Duration(seconds: 15), (_) => _pushLocation());
-        await _loadTrips();
-      } else {
-        _poll?.cancel();
-        _locationTimer?.cancel();
-        setState(() => _trips = []);
-      }
+      await repo.setOnline(true);
+      if (!mounted) return;
+      setState(() => _ready = true);
+      await _pushLocation();
+      _poll = Timer.periodic(const Duration(seconds: 6), (_) => _loadTrips());
+      _locationTimer = Timer.periodic(const Duration(seconds: 15), (_) => _pushLocation());
+      await _loadTrips();
     } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _error = e.toString());
     }
   }
 
@@ -139,8 +131,6 @@ class _HomeScreenState extends State<HomeScreen> {
             markers: [MapMarker(_me, color: AppTheme.primary, icon: Icons.my_location)],
             onMapReady: _moveToMe,
           ),
-
-          // Top controls
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -148,7 +138,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   _circle(Icons.menu, () => _scaffoldKey.currentState?.openDrawer()),
                   const Spacer(),
-                  _statusPill(),
+                  _onlinePill(),
                   const Spacer(),
                   _circle(Icons.account_balance_wallet_outlined, () {
                     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EarningsScreen()));
@@ -157,31 +147,27 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-
           Positioned(right: 16, bottom: 280, child: _circle(Icons.my_location, _locate)),
-
           Align(alignment: Alignment.bottomCenter, child: _sheet()),
         ],
       ),
     );
   }
 
-  Widget _statusPill() {
+  Widget _onlinePill() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: _online ? AppTheme.green : Colors.white,
+        color: AppTheme.green,
         borderRadius: BorderRadius.circular(30),
         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
       ),
-      child: Row(
+      child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(_online ? Icons.bolt : Icons.power_settings_new,
-              size: 16, color: _online ? Colors.white : AppTheme.muted),
-          const SizedBox(width: 6),
-          Text(_online ? 'Online' : 'Offline',
-              style: TextStyle(fontWeight: FontWeight.w600, color: _online ? Colors.white : AppTheme.muted)),
+          Icon(Icons.bolt, size: 16, color: Colors.white),
+          SizedBox(width: 6),
+          Text('Online', style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
         ],
       ),
     );
@@ -222,44 +208,32 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 14),
           Row(
-            children: [
+            children: const [
+              Icon(Icons.bolt, color: AppTheme.green, size: 20),
+              SizedBox(width: 6),
               Expanded(
-                child: Text(_online ? "You're online — earning enabled" : "You're offline",
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.ink)),
+                child: Text("You're online — receiving requests",
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.ink)),
               ),
-              if (_busy)
-                const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(strokeWidth: 2))
-              else
-                Switch(value: _online, activeThumbColor: AppTheme.green, onChanged: _toggleOnline),
             ],
           ),
+          const SizedBox(height: 4),
+          const Text('Keep data or Wi-Fi on. Stay online for the whole trip.',
+              style: TextStyle(fontSize: 12, color: AppTheme.muted)),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(_error!, style: const TextStyle(color: AppTheme.red, fontSize: 13)),
             ),
           const SizedBox(height: 8),
-          Flexible(child: _online ? _tripList() : _offline()),
-        ],
-      ),
-    );
-  }
-
-  Widget _offline() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 24),
-      child: Column(
-        children: [
-          Icon(Icons.toggle_on, size: 48, color: AppTheme.muted),
-          SizedBox(height: 8),
-          Text('Go online to start receiving trip requests', textAlign: TextAlign.center, style: TextStyle(color: AppTheme.muted)),
+          Flexible(child: _tripList()),
         ],
       ),
     );
   }
 
   Widget _tripList() {
-    if (_trips.isEmpty) {
+    if (!_ready || _trips.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 24),
         child: Column(

@@ -21,6 +21,12 @@ const schema = z.object({
 
   REDIS_URL: z.string().optional().default(''),
 
+  // Comma-separated web origins allowed to call the API (the website + admin URLs).
+  ALLOWED_ORIGINS: z
+    .string()
+    .optional()
+    .default('https://ubikenation-fkrb.vercel.app,https://ubikenation.vercel.app'),
+
   COMMISSION_RATE: z.coerce.number().min(0).max(1).default(0.2),
   FOUNDING_BIKE_SLOTS: z.coerce.number().int().default(10),
   FOUNDING_CAR_SLOTS: z.coerce.number().int().default(10),

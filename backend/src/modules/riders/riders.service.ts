@@ -101,6 +101,46 @@ export async function updateLocation(profileId: string, lat: number, lng: number
   return { ok: true };
 }
 
+/**
+ * Logs a rider violation and escalates the penalty by offence count:
+ *   1st → warning, 2nd → suspended, 3rd+ → banned.
+ * Used for going offline / killing GPS during an active trip.
+ */
+export async function reportViolation(profileId: string, kind: string, tripId?: string) {
+  const { data: rider } = await supabaseAdmin
+    .from('riders')
+    .select('id, status')
+    .eq('profile_id', profileId)
+    .maybeSingle();
+  if (!rider) throw notFound('not a rider');
+
+  // Count prior violations to decide severity.
+  const { count } = await supabaseAdmin
+    .from('rider_violations')
+    .select('id', { count: 'exact', head: true })
+    .eq('rider_id', rider.id);
+  const offence = (count ?? 0) + 1;
+  const severity = offence >= 3 ? 'termination' : offence === 2 ? 'suspension' : 'warning';
+
+  await supabaseAdmin.from('rider_violations').insert({
+    rider_id: rider.id,
+    trip_id: tripId ?? null,
+    kind,
+    severity,
+    details: { offence },
+  });
+
+  let newStatus = rider.status;
+  if (severity === 'termination') newStatus = 'banned';
+  else if (severity === 'suspension') newStatus = 'suspended';
+
+  if (newStatus !== rider.status) {
+    await supabaseAdmin.from('riders').update({ status: newStatus, is_online: false }).eq('id', rider.id);
+  }
+
+  return { offence, severity, status: newStatus };
+}
+
 export async function getRiderStatus(profileId: string) {
   const { data } = await supabaseAdmin
     .from('riders')

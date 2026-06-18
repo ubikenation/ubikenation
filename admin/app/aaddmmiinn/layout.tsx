@@ -6,11 +6,11 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 const NAV = [
-  { href: '/dashboard', label: 'Overview', icon: '📊' },
-  { href: '/dashboard/riders', label: 'Verifications', icon: '🪪' },
-  { href: '/dashboard/founding', label: 'Founding Riders', icon: '🎖️' },
-  { href: '/dashboard/trips', label: 'Trips', icon: '🛣️' },
-  { href: '/dashboard/payouts', label: 'Payouts', icon: '💸' },
+  { href: '/aaddmmiinn', label: 'Overview', icon: '📊' },
+  { href: '/aaddmmiinn/riders', label: 'Verifications', icon: '🪪' },
+  { href: '/aaddmmiinn/founding', label: 'Founding Riders', icon: '🎖️' },
+  { href: '/aaddmmiinn/trips', label: 'Trips', icon: '🛣️' },
+  { href: '/aaddmmiinn/payouts', label: 'Payouts', icon: '💸' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

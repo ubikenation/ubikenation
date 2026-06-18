@@ -42,6 +42,12 @@ class RiderRepository {
 
   Future<void> setOnline(bool online) => _api.post('/api/riders/online', {'isOnline': online});
 
+  Future<void> reportViolation(String kind, {String? tripId}) {
+    final body = <String, dynamic>{'kind': kind};
+    if (tripId != null) body['tripId'] = tripId;
+    return _api.post('/api/riders/violation', body);
+  }
+
   Future<void> pushLocation(double lat, double lng) =>
       _api.post('/api/riders/location', {'lat': lat, 'lng': lng});
 

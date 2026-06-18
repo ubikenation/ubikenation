@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { handler, ok } from '../../utils/http';
 import { requireAuth } from '../../middleware/auth';
 import {
-  getRiderStatus, quoteRegistrationFee, registerRider,
+  getRiderStatus, quoteRegistrationFee, registerRider, reportViolation,
   setOnline, submitDocuments, updateLocation,
 } from './riders.service';
 
@@ -40,6 +40,14 @@ ridersRouter.post('/online', requireAuth, handler(async (req, res) => {
 ridersRouter.post('/location', requireAuth, handler(async (req, res) => {
   const { lat, lng } = z.object({ lat: z.number(), lng: z.number() }).parse(req.body);
   ok(res, await updateLocation(req.user!.id, lat, lng));
+}));
+
+// POST /api/riders/violation — report a violation (e.g. offline during a trip).
+ridersRouter.post('/violation', requireAuth, handler(async (req, res) => {
+  const { kind, tripId } = z
+    .object({ kind: z.string().min(1), tripId: z.string().uuid().optional() })
+    .parse(req.body);
+  ok(res, await reportViolation(req.user!.id, kind, tripId));
 }));
 
 // GET /api/riders/me — this profile's rider record(s) + status.

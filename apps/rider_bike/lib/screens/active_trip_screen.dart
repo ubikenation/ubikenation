@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -24,17 +25,46 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   Timer? _poll;
   String? _error;
 
+  // Connectivity watchdog: going offline during a trip is a bannable offence.
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
+  bool _wasOffline = false;
+  bool _violationReported = false;
+
   @override
   void initState() {
     super.initState();
     _refresh();
     _poll = Timer.periodic(const Duration(seconds: 5), (_) => _refresh());
+    _connSub = Connectivity().onConnectivityChanged.listen(_onConnectivity);
   }
 
   @override
   void dispose() {
     _poll?.cancel();
+    _connSub?.cancel();
     super.dispose();
+  }
+
+  bool get _tripActive {
+    final s = _trip?['status'] as String?;
+    return s == 'rider_assigned' || s == 'arrived' || s == 'in_progress';
+  }
+
+  void _onConnectivity(List<ConnectivityResult> result) {
+    final offline = result.every((r) => r == ConnectivityResult.none);
+    if (offline && _tripActive) {
+      _wasOffline = true;
+    } else if (!offline && _wasOffline && !_violationReported) {
+      // Came back online after dropping out mid-trip → record the violation.
+      _violationReported = true;
+      _repo.reportViolation('offline_during_trip', tripId: widget.tripId).catchError((_) {});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          backgroundColor: AppTheme.red,
+          content: Text('You went offline during a trip. This is a violation and has been logged.'),
+        ));
+      }
+    }
   }
 
   RiderRepository get _repo => context.read<RiderRepository>();
