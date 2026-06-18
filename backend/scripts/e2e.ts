@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '../src/config/supabase';
 import { env } from '../src/config/env';
 
-const BASE = 'http://localhost:8080';
+const BASE = process.env.E2E_BASE ?? 'http://localhost:8080';
 const anon = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });

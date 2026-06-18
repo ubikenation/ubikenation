@@ -8,6 +8,7 @@ import 'services/auth_service.dart';
 import 'services/trip_repository.dart';
 import 'theme/app_theme.dart';
 import 'widgets/connectivity_gate.dart';
+import 'widgets/animated_splash.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
@@ -42,7 +43,7 @@ class UBikeApp extends StatelessWidget {
       title: 'U-Bike',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: const ConnectivityGate(child: _AuthGate()),
+      home: const AnimatedSplash(next: ConnectivityGate(child: _AuthGate())),
     );
   }
 }
