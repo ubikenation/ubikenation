@@ -1,73 +1,141 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/geocoding_service.dart';
 import '../services/trip_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
 import 'paystack_webview.dart';
 import 'trip_screen.dart';
 
-/// Collects pickup + destination, gets a fare estimate, then creates the trip
-/// and launches the 50% upfront payment.
+/// Booking flow: confirm pickup (your current location, named) → search and pick
+/// a destination → THEN choose a service (with its fare) → pay 50% → request.
 class BookingScreen extends StatefulWidget {
-  const BookingScreen({super.key, required this.category});
-  final ServiceCategory category;
+  const BookingScreen({super.key});
 
   @override
   State<BookingScreen> createState() => _BookingScreenState();
 }
 
 class _BookingScreenState extends State<BookingScreen> {
-  // Defaults around Nairobi CBD so the flow is testable without a map picker.
-  final double _pickupLat = -1.2921, _pickupLng = 36.8219;
-  final double _dropLat = -1.3000, _dropLng = 36.7800;
-  final _pickupCtrl = TextEditingController(text: 'Current location');
-  final _dropCtrl = TextEditingController(text: 'Destination');
+  final _geo = GeocodingService();
+  final _destCtrl = TextEditingController();
 
-  FareQuote? _quote;
-  bool _busy = false;
+  Place? _pickup;
+  Place? _dropoff;
+  bool _locating = true;
+
+  Timer? _debounce;
+  List<Place> _suggestions = [];
+  bool _searching = false;
+
+  // Fares per vehicle class once a destination is set.
+  Map<String, int> _fares = {};
+  bool _loadingFares = false;
   String? _error;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initPickup();
+  }
 
   @override
   void dispose() {
-    _pickupCtrl.dispose();
-    _dropCtrl.dispose();
+    _debounce?.cancel();
+    _destCtrl.dispose();
     super.dispose();
   }
 
-  double get _distanceKm =>
-      _haversine(_pickupLat, _pickupLng, _dropLat, _dropLng);
-
-  // Rough duration estimate; backend recomputes fare authoritatively on create.
-  double get _durationMin => _distanceKm / 22 * 60; // ~22 km/h urban avg
-
-  Future<void> _estimate() async {
+  Future<void> _initPickup() async {
+    // Default to Meru town; replace with the device's real, named location.
+    double lat = GeocodingService.meruLat, lng = GeocodingService.meruLng;
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm != LocationPermission.denied && perm != LocationPermission.deniedForever) {
+        final pos = await Geolocator.getCurrentPosition();
+        lat = pos.latitude;
+        lng = pos.longitude;
+      }
+    } catch (_) {}
+    final name = await _geo.reverse(lat, lng);
+    if (!mounted) return;
     setState(() {
-      _busy = true;
+      _pickup = Place(name: name ?? 'Current location', shortName: name ?? 'Current location', lat: lat, lng: lng);
+      _locating = false;
+    });
+  }
+
+  void _onDestChanged(String value) {
+    _debounce?.cancel();
+    if (value.trim().isEmpty) {
+      setState(() => _suggestions = []);
+      return;
+    }
+    setState(() => _searching = true);
+    _debounce = Timer(const Duration(milliseconds: 350), () async {
+      final results = await _geo.search(value, nearLat: _pickup?.lat, nearLng: _pickup?.lng);
+      if (!mounted) return;
+      setState(() {
+        _suggestions = results;
+        _searching = false;
+      });
+    });
+  }
+
+  Future<void> _pickDestination(Place place) async {
+    FocusScope.of(context).unfocus();
+    _destCtrl.text = place.shortName;
+    setState(() {
+      _dropoff = place;
+      _suggestions = [];
+      _loadingFares = true;
+      _fares = {};
       _error = null;
     });
+    await _loadFares();
+  }
+
+  double get _distanceKm {
+    if (_pickup == null || _dropoff == null) return 0;
+    return _haversine(_pickup!.lat, _pickup!.lng, _dropoff!.lat, _dropoff!.lng);
+  }
+
+  double get _durationMin => _distanceKm / 22 * 60;
+
+  Future<void> _loadFares() async {
     try {
       final repo = context.read<TripRepository>();
-      final q = await repo.estimateFare(
-        vehicleClass: widget.category.id,
-        distanceKm: double.parse(_distanceKm.toStringAsFixed(2)),
-        durationMin: double.parse(_durationMin.toStringAsFixed(1)),
-      );
-      setState(() => _quote = q);
+      final d = double.parse(_distanceKm.toStringAsFixed(2));
+      final t = double.parse(_durationMin.toStringAsFixed(1));
+      final entries = await Future.wait(ServiceCategory.all.map((c) async {
+        final q = await repo.estimateFare(vehicleClass: c.id, distanceKm: d, durationMin: t);
+        return MapEntry(c.id, q.fare);
+      }));
+      if (!mounted) return;
+      setState(() {
+        _fares = Map.fromEntries(entries);
+        _loadingFares = false;
+      });
     } catch (e) {
-      setState(() => _error = e.toString());
-    } finally {
-      if (mounted) setState(() => _busy = false);
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loadingFares = false;
+      });
     }
   }
 
-  Future<void> _bookAndPay() async {
-    final quote = _quote;
-    if (quote == null) return;
+  Future<void> _book(ServiceCategory category) async {
+    if (_pickup == null || _dropoff == null) return;
     setState(() {
       _busy = true;
       _error = null;
@@ -75,33 +143,28 @@ class _BookingScreenState extends State<BookingScreen> {
     try {
       final repo = context.read<TripRepository>();
       final trip = await repo.createTrip(
-        tripType: widget.category.tripType,
-        vehicleClass: widget.category.id,
-        pickupLat: _pickupLat,
-        pickupLng: _pickupLng,
-        pickupAddress: _pickupCtrl.text,
-        dropoffLat: _dropLat,
-        dropoffLng: _dropLng,
-        dropoffAddress: _dropCtrl.text,
+        tripType: category.tripType,
+        vehicleClass: category.id,
+        pickupLat: _pickup!.lat,
+        pickupLng: _pickup!.lng,
+        pickupAddress: _pickup!.name,
+        dropoffLat: _dropoff!.lat,
+        dropoffLng: _dropoff!.lng,
+        dropoffAddress: _dropoff!.name,
         distanceKm: double.parse(_distanceKm.toStringAsFixed(2)),
         durationMin: double.parse(_durationMin.toStringAsFixed(1)),
       );
       final checkout = await repo.initiateUpfront(trip.id, trip.upfront);
       if (!mounted) return;
-
-      // Embedded Paystack checkout; returns true when payment completes.
       final paid = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) => PaystackWebView(url: checkout.url, callbackUrl: TripRepository.paystackCallbackUrl),
         ),
       );
-
       if (paid == true) {
         await repo.verifyPayment(checkout.reference);
         if (!mounted) return;
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => TripScreen(trip: trip)),
-        );
+        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => TripScreen(trip: trip)));
       } else {
         setState(() {
           _error = 'Payment was not completed. You can try again.';
@@ -118,53 +181,130 @@ class _BookingScreenState extends State<BookingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final q = _quote;
+    final center = _dropoff != null
+        ? LatLng((_pickup!.lat + _dropoff!.lat) / 2, (_pickup!.lng + _dropoff!.lng) / 2)
+        : LatLng(_pickup?.lat ?? GeocodingService.meruLat, _pickup?.lng ?? GeocodingService.meruLng);
+
     return Scaffold(
-      appBar: AppBar(title: Text(widget.category.label)),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: SizedBox(
-                height: 280,
-                child: AppMap(
-                  center: LatLng((_pickupLat + _dropLat) / 2, (_pickupLng + _dropLng) / 2),
-                  zoom: 12,
-                  markers: [
-                    MapMarker(LatLng(_pickupLat, _pickupLng), color: AppTheme.primary, icon: Icons.my_location),
-                    MapMarker(LatLng(_dropLat, _dropLng), color: AppTheme.accent, icon: Icons.location_pin),
+      appBar: AppBar(title: const Text('Where to?')),
+      body: Column(
+        children: [
+          SizedBox(
+            height: 200,
+            child: AppMap(
+              center: center,
+              zoom: _dropoff != null ? 12 : 14,
+              markers: [
+                if (_pickup != null) MapMarker(LatLng(_pickup!.lat, _pickup!.lng), color: AppTheme.primary, icon: Icons.my_location),
+                if (_dropoff != null) MapMarker(LatLng(_dropoff!.lat, _dropoff!.lng), color: AppTheme.accent, icon: Icons.location_pin),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                // Pickup (named current location)
+                _fieldRow(
+                  icon: Icons.my_location,
+                  iconColor: AppTheme.primary,
+                  child: _locating
+                      ? const Text('Locating you…', style: TextStyle(color: AppTheme.muted))
+                      : Text(_pickup?.name ?? 'Current location',
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: AppTheme.ink, fontWeight: FontWeight.w500)),
+                ),
+                const SizedBox(height: 10),
+                // Destination search
+                _fieldRow(
+                  icon: Icons.location_on,
+                  iconColor: AppTheme.accent,
+                  child: TextField(
+                    controller: _destCtrl,
+                    onChanged: _onDestChanged,
+                    textInputAction: TextInputAction.search,
+                    decoration: const InputDecoration(
+                      hintText: 'Search destination (e.g. Maua, Meru)…',
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                  ),
+                ),
+
+                if (_searching) const Padding(padding: EdgeInsets.all(12), child: LinearProgressIndicator()),
+
+                // Suggestions
+                ..._suggestions.map((p) => ListTile(
+                      leading: const Icon(Icons.place_outlined, color: AppTheme.muted),
+                      title: Text(p.shortName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(p.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      onTap: () => _pickDestination(p),
+                    )),
+
+                if (_error != null)
+                  Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(_error!, style: const TextStyle(color: Colors.red))),
+
+                // Services appear only AFTER a destination is chosen
+                if (_dropoff != null) ...[
+                  const SizedBox(height: 8),
+                  Text('Choose a service  ·  ${_distanceKm.toStringAsFixed(1)} km',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.ink)),
+                  const SizedBox(height: 10),
+                  if (_loadingFares)
+                    const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppTheme.primary)))
+                  else
+                    ...ServiceCategory.all.map(_serviceTile),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fieldRow({required IconData icon, required Color iconColor, required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(14)),
+      child: Row(children: [Icon(icon, color: iconColor), const SizedBox(width: 12), Expanded(child: child)]),
+    );
+  }
+
+  Widget _serviceTile(ServiceCategory c) {
+    final fare = _fares[c.id];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: _busy || fare == null ? null : () => _book(c),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.black12),
+          ),
+          child: Row(
+            children: [
+              Icon(c.icon, color: AppTheme.primary, size: 30),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(c.label, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.ink)),
+                    Text('Pay 50% to confirm', style: TextStyle(fontSize: 12, color: AppTheme.muted)),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            _LocationField(controller: _pickupCtrl, icon: Icons.my_location, label: 'Pickup'),
-            const SizedBox(height: 12),
-            _LocationField(controller: _dropCtrl, icon: Icons.location_on, label: 'Destination'),
-            const SizedBox(height: 16),
-            Text('Estimated distance: ${_distanceKm.toStringAsFixed(1)} km',
-                style: const TextStyle(color: AppTheme.muted)),
-            const SizedBox(height: 16),
-            if (q != null) _FareCard(quote: q),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(_error!, style: const TextStyle(color: Colors.red)),
-              ),
-            const SizedBox(height: 8),
-            if (q == null)
-              FilledButton(
-                onPressed: _busy ? null : _estimate,
-                child: _busy ? const _Loader() : const Text('Get Fare Estimate'),
-              )
-            else
-              FilledButton(
-                onPressed: _busy ? null : _bookAndPay,
-                child: _busy ? const _Loader() : Text('Pay KES ${q.upfront} (50%) & Request'),
-              ),
-          ],
+              if (_busy)
+                const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+              else
+                Text(fare != null ? 'KES $fare' : '—',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.ink)),
+            ],
+          ),
         ),
       ),
     );
@@ -180,66 +320,4 @@ class _BookingScreenState extends State<BookingScreen> {
   }
 
   static double _rad(double d) => d * math.pi / 180;
-}
-
-class _LocationField extends StatelessWidget {
-  const _LocationField({required this.controller, required this.icon, required this.label});
-  final TextEditingController controller;
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: controller,
-      decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon, color: AppTheme.primary)),
-    );
-  }
-}
-
-class _FareCard extends StatelessWidget {
-  const _FareCard({required this.quote});
-  final FareQuote quote;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Column(
-        children: [
-          _row('Total fare', 'KES ${quote.fare}', bold: true),
-          const Divider(),
-          _row('Pay now (50%)', 'KES ${quote.upfront}'),
-          _row('Pay after trip (50%)', 'KES ${quote.balance}'),
-        ],
-      ),
-    );
-  }
-
-  Widget _row(String label, String value, {bool bold = false}) {
-    final style = TextStyle(
-      fontWeight: bold ? FontWeight.bold : FontWeight.normal,
-      fontSize: bold ? 18 : 14,
-      color: AppTheme.ink,
-    );
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [Text(label, style: style), Text(value, style: style)],
-      ),
-    );
-  }
-}
-
-class _Loader extends StatelessWidget {
-  const _Loader();
-  @override
-  Widget build(BuildContext context) =>
-      const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2));
 }

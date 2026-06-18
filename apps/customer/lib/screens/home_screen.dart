@@ -4,7 +4,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../models/models.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
@@ -53,8 +52,8 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _openBooking(ServiceCategory category) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => BookingScreen(category: category)));
+  void _openBooking() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BookingScreen()));
   }
 
   @override
@@ -147,12 +146,12 @@ class _HomeScreenState extends State<HomeScreen> {
           Text('Hi $name 👋', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.ink)),
           const SizedBox(height: 14),
 
-          // Where to? search bar
+          // Where to? — opens the destination search; services come after.
           InkWell(
             borderRadius: BorderRadius.circular(16),
-            onTap: () => _openBooking(ServiceCategory.all.first),
+            onTap: _openBooking,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
               decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(16)),
               child: Row(
                 children: const [
@@ -163,46 +162,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          const SizedBox(height: 18),
-
-          const Text('Choose a service', style: TextStyle(fontWeight: FontWeight.w600, color: AppTheme.ink)),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 104,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: ServiceCategory.all.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (_, i) => _serviceCard(ServiceCategory.all[i]),
-            ),
+          const SizedBox(height: 10),
+          const Row(
+            children: [
+              Icon(Icons.bolt, size: 16, color: AppTheme.accent),
+              SizedBox(width: 6),
+              Text('Set your destination to see fares & services',
+                  style: TextStyle(fontSize: 12, color: AppTheme.muted)),
+            ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _serviceCard(ServiceCategory c) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => _openBooking(c),
-      child: Container(
-        width: 96,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.black12),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(c.icon, color: AppTheme.primary, size: 30),
-            const SizedBox(height: 8),
-            Text(c.label, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.ink)),
-            Text('KES ${c.minFare}+', style: const TextStyle(fontSize: 11, color: AppTheme.muted)),
-          ],
-        ),
       ),
     );
   }
