@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../data/terms.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 
@@ -21,6 +22,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLogin = true;
   bool _busy = false;
   bool _obscure = true;
+  bool _agreedToTerms = false;
   String? _error;
   String? _info;
 
@@ -48,6 +50,10 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
+    if (!_agreedToTerms) {
+      setState(() => _error = 'Please accept the Terms & Conditions to continue.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -103,6 +109,26 @@ class _AuthScreenState extends State<AuthScreen> {
     } catch (e) {
       if (mounted) setState(() => _error = _friendly(e));
     }
+  }
+
+  void _showTerms() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Terms & Conditions'),
+        content: const SingleChildScrollView(child: Text(kUBikeTerms)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          FilledButton(
+            onPressed: () {
+              setState(() => _agreedToTerms = true);
+              Navigator.pop(ctx);
+            },
+            child: const Text('I Agree'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -164,7 +190,36 @@ class _AuthScreenState extends State<AuthScreen> {
                     alignment: Alignment.centerRight,
                     child: TextButton(onPressed: _busy ? null : _forgotPassword, child: const Text('Forgot password?')),
                   ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: Checkbox(
+                        value: _agreedToTerms,
+                        activeColor: AppTheme.primary,
+                        onChanged: (v) => setState(() => _agreedToTerms = v ?? false),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text('I agree to the ', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+                          GestureDetector(
+                            onTap: _showTerms,
+                            child: const Text('Terms & Conditions',
+                                style: TextStyle(color: AppTheme.primary, fontSize: 13, fontWeight: FontWeight.w600, decoration: TextDecoration.underline)),
+                          ),
+                          const Text(' & Privacy Policy', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 if (_info != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
