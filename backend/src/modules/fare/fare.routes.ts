@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { handler, ok } from '../../utils/http';
 import { requireAuth } from '../../middleware/auth';
-import { calculateFare, validateAdjustment } from './fare.service';
+import { calculateFare, estimateErrandFare, validateAdjustment } from './fare.service';
 
 export const fareRouter = Router();
 
@@ -29,6 +29,23 @@ fareRouter.post(
       upfront: fare.upfrontAmount,
       balance: fare.balanceAmount,
     });
+  }),
+);
+
+const errandSchema = z.object({
+  errandType: z.string().min(1),
+  description: z.string().min(1),
+  distanceKm: z.number().nonnegative().default(0),
+  durationMin: z.number().nonnegative().default(0),
+});
+
+// POST /api/fare/errand-estimate — auto fare from the listed errand items.
+fareRouter.post(
+  '/errand-estimate',
+  requireAuth,
+  handler(async (req, res) => {
+    const input = errandSchema.parse(req.body);
+    ok(res, await estimateErrandFare(input));
   }),
 );
 

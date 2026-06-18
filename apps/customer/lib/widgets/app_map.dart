@@ -21,6 +21,7 @@ class AppMap extends StatelessWidget {
     this.controller,
     this.interactive = true,
     this.onMapReady,
+    this.myLocation,
   });
 
   final LatLng center;
@@ -29,6 +30,9 @@ class AppMap extends StatelessWidget {
   final MapController? controller;
   final bool interactive;
   final VoidCallback? onMapReady;
+
+  /// When set, draws a fancy pulsing blue "you are here" dot.
+  final LatLng? myLocation;
 
   // Provided at build time: --dart-define=MAPBOX_ACCESS_TOKEN=pk....
   static const String _token = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
@@ -64,7 +68,73 @@ class AppMap extends StatelessWidget {
                 ),
             ],
           ),
+        if (myLocation != null)
+          MarkerLayer(
+            markers: [
+              Marker(point: myLocation!, width: 90, height: 90, child: const _PulsingDot()),
+            ],
+          ),
       ],
+    );
+  }
+}
+
+/// Animated "current location" indicator: a solid blue dot with a white ring and
+/// an expanding, fading halo (Uber/Bolt style).
+class _PulsingDot extends StatefulWidget {
+  const _PulsingDot();
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 1800))..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const blue = Color(0xFF1E88E5);
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        final t = _c.value;
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            // expanding halo
+            Container(
+              width: 24 + t * 60,
+              height: 24 + t * 60,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: blue.withValues(alpha: (1 - t) * 0.25),
+              ),
+            ),
+            // white ring
+            Container(
+              width: 26,
+              height: 26,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                boxShadow: [BoxShadow(color: blue.withValues(alpha: 0.4), blurRadius: 8)],
+              ),
+            ),
+            // solid dot
+            Container(
+              width: 18,
+              height: 18,
+              decoration: const BoxDecoration(shape: BoxShape.circle, color: blue),
+            ),
+          ],
+        );
+      },
     );
   }
 }

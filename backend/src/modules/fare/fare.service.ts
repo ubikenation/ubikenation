@@ -136,6 +136,74 @@ export function validateAdjustment(req: AdjustmentRequest): AdjustmentResult {
   };
 }
 
+// Per-item handling fee (KES) by errand category — shopping tasks cost more
+// per item than a simple parcel/document drop.
+const ERRAND_PER_ITEM: Record<string, number> = {
+  grocery_shopping: 50,
+  shopping_assistance: 50,
+  food_pickup: 40,
+  pharmacy_pickup: 45,
+  gift_delivery: 40,
+  parcel_delivery: 30,
+  document_delivery: 30,
+  business_delivery: 35,
+  office_delivery: 35,
+  utility_payment: 40,
+  personal_assistant: 45,
+  custom: 40,
+};
+
+export interface ErrandEstimateInput {
+  errandType: string;
+  description: string;
+  distanceKm: number;
+  durationMin: number;
+}
+
+export interface ErrandEstimate {
+  fare: number;
+  upfront: number;
+  balance: number;
+  itemCount: number;
+  perItem: number;
+}
+
+/**
+ * Automatically estimates an errand fare from what the customer listed. The
+ * description is "scanned" into individual items (split on new lines / commas /
+ * semicolons / bullets); more items + a per-item handling fee + distance/time +
+ * the errands base all roll into the fare. The rider may then adjust it ≤30%.
+ */
+export async function estimateErrandFare(input: ErrandEstimateInput): Promise<ErrandEstimate> {
+  const { data: cfg } = await supabaseAdmin
+    .from('fare_config')
+    .select('base_fare, per_km, per_min, minimum_fare')
+    .eq('vehicle_class', 'errands')
+    .single();
+
+  const base = cfg?.base_fare ?? 150;
+  const perKm = Number(cfg?.per_km ?? 30);
+  const perMin = Number(cfg?.per_min ?? 3);
+  const minimum = cfg?.minimum_fare ?? 300;
+
+  const items = input.description
+    .split(/\r?\n|,|;|•|•|\d+\.|\*/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 1);
+  const itemCount = Math.max(items.length, 1);
+  const perItem = ERRAND_PER_ITEM[input.errandType] ?? 40;
+
+  const raw =
+    base +
+    input.distanceKm * perKm +
+    input.durationMin * perMin +
+    itemCount * perItem;
+
+  const fare = Math.max(roundTo(raw, 5), minimum);
+  const upfront = roundTo(fare * env.UPFRONT_PAYMENT_RATIO, 5);
+  return { fare, upfront, balance: fare - upfront, itemCount, perItem };
+}
+
 function clamp01(n?: number): number {
   if (!n || Number.isNaN(n)) return 0;
   return Math.min(Math.max(n, 0), 1);

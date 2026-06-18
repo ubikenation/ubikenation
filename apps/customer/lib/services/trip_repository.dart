@@ -31,6 +31,7 @@ class TripRepository {
     required double distanceKm,
     required double durationMin,
     String? errandType,
+    String? errandDescription,
   }) async {
     final body = <String, dynamic>{
       'tripType': tripType,
@@ -43,9 +44,50 @@ class TripRepository {
       body['dropoff'] = {'lat': dropoffLat, 'lng': dropoffLng, 'address': dropoffAddress};
     }
     if (errandType != null) body['errandType'] = errandType;
+    if (errandDescription != null) body['errandDetails'] = {'description': errandDescription};
 
     final data = await _api.post('/api/trips', body);
     return Trip.fromCreate(data as Map<String, dynamic>);
+  }
+
+  /// Auto fare estimate for an errand from the listed items/description.
+  Future<({int fare, int upfront, int balance, int itemCount})> estimateErrand({
+    required String errandType,
+    required String description,
+    required double distanceKm,
+    required double durationMin,
+  }) async {
+    final d = await _api.post('/api/fare/errand-estimate', {
+      'errandType': errandType,
+      'description': description,
+      'distanceKm': distanceKm,
+      'durationMin': durationMin,
+    }) as Map<String, dynamic>;
+    return (
+      fare: (d['fare'] as num).toInt(),
+      upfront: (d['upfront'] as num).toInt(),
+      balance: (d['balance'] as num).toInt(),
+      itemCount: (d['itemCount'] as num?)?.toInt() ?? 1,
+    );
+  }
+
+  /// The customer's trip history.
+  Future<List<Map<String, dynamic>>> myTrips() async {
+    final d = await _api.get('/api/trips/mine') as List<dynamic>;
+    return d.cast<Map<String, dynamic>>();
+  }
+
+  /// Wallet balance + recent ledger entries.
+  Future<Map<String, dynamic>> wallet() async => await _api.get('/api/payments/wallet') as Map<String, dynamic>;
+
+  /// Starts a Paystack checkout to top up the wallet.
+  Future<({String url, String reference})> initiateTopup(int amount) async {
+    final d = await _api.post('/api/payments/initiate', {
+      'purpose': 'wallet_topup',
+      'amount': amount,
+      'callbackUrl': paystackCallbackUrl,
+    }) as Map<String, dynamic>;
+    return (url: d['authorizationUrl'] as String, reference: d['reference'] as String);
   }
 
   /// Starts a Paystack checkout for the trip's upfront 50%.

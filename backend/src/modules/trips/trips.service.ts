@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '../../config/supabase';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../utils/http';
-import { calculateFare, validateAdjustment } from '../fare/fare.service';
+import { calculateFare, estimateErrandFare, validateAdjustment } from '../fare/fare.service';
 import { releaseEscrow, refundEscrow } from '../payments/escrow.service';
 import { VEHICLE_CLASS_KIND, type AdjustmentReason, type VehicleClass } from '../../types/domain';
 import { haversineKm } from '../matching/matching.service';
@@ -23,11 +23,20 @@ export interface CreateTripInput {
  * The trip moves to `searching` only after the upfront payment settles (see payments.service).
  */
 export async function createTrip(input: CreateTripInput) {
-  const fare = await calculateFare({
-    vehicleClass: input.vehicleClass,
-    distanceKm: input.distanceKm,
-    durationMin: input.durationMin,
-  });
+  // Errands are priced from the listed items; rides from distance/time/surge.
+  const fare =
+    input.vehicleClass === 'errands'
+      ? await estimateErrandFare({
+          errandType: input.errandType ?? 'custom',
+          description: (input.errandDetails?.description as string) ?? '',
+          distanceKm: input.distanceKm,
+          durationMin: input.durationMin,
+        }).then((e) => ({ baseFare: e.fare, upfrontAmount: e.upfront, balanceAmount: e.balance }))
+      : await calculateFare({
+          vehicleClass: input.vehicleClass,
+          distanceKm: input.distanceKm,
+          durationMin: input.durationMin,
+        });
 
   const { data, error } = await supabaseAdmin
     .from('trips')
@@ -251,6 +260,17 @@ export async function listAvailableTrips(riderProfileId: string) {
   return list
     .map((t) => ({ ...t, pickupDistanceKm: haversineKm(rider.last_lat!, rider.last_lng!, t.pickup_lat, t.pickup_lng) }))
     .sort((a, b) => a.pickupDistanceKm - b.pickupDistanceKm);
+}
+
+/** The authenticated customer's own trips (history). */
+export async function listMyTrips(customerId: string, limit = 50) {
+  const { data } = await supabaseAdmin
+    .from('trips')
+    .select('id, trip_type, vehicle_class, status, final_fare, base_fare, balance_amount, pickup_address, dropoff_address, errand_type, created_at')
+    .eq('customer_id', customerId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  return data ?? [];
 }
 
 /** Returns a trip if the caller is the customer or the assigned rider. */

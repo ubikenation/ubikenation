@@ -11,6 +11,7 @@ import '../services/geocoding_service.dart';
 import '../services/trip_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
+import 'errands_screen.dart';
 import 'paystack_webview.dart';
 import 'trip_screen.dart';
 
@@ -134,6 +135,22 @@ class _BookingScreenState extends State<BookingScreen> {
     }
   }
 
+  void _onServiceTap(ServiceCategory category) {
+    if (_pickup == null || _dropoff == null) return;
+    if (category.id == 'errands') {
+      Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ErrandsScreen(
+          pickup: _pickup!,
+          dropoff: _dropoff!,
+          distanceKm: _distanceKm,
+          durationMin: _durationMin,
+        ),
+      ));
+      return;
+    }
+    _book(category);
+  }
+
   Future<void> _book(ServiceCategory category) async {
     if (_pickup == null || _dropoff == null) return;
     setState(() {
@@ -194,8 +211,8 @@ class _BookingScreenState extends State<BookingScreen> {
             child: AppMap(
               center: center,
               zoom: _dropoff != null ? 12 : 14,
+              myLocation: _pickup != null ? LatLng(_pickup!.lat, _pickup!.lng) : null,
               markers: [
-                if (_pickup != null) MapMarker(LatLng(_pickup!.lat, _pickup!.lng), color: AppTheme.primary, icon: Icons.my_location),
                 if (_dropoff != null) MapMarker(LatLng(_dropoff!.lat, _dropoff!.lng), color: AppTheme.accent, icon: Icons.location_pin),
               ],
             ),
@@ -277,7 +294,7 @@ class _BookingScreenState extends State<BookingScreen> {
       padding: const EdgeInsets.only(bottom: 10),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: _busy || fare == null ? null : () => _book(c),
+        onTap: _busy || fare == null ? null : () => _onServiceTap(c),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(

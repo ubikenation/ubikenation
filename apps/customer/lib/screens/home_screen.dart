@@ -8,6 +8,7 @@ import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
 import 'booking_screen.dart';
+import 'menu_screens.dart';
 
 /// Bolt-style home: a full-screen map with a floating bottom sheet to pick a
 /// service and set a destination.
@@ -69,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
             center: _nairobi,
             zoom: 14,
             controller: _map,
-            markers: [MapMarker(_me, color: AppTheme.primary, icon: Icons.my_location)],
+            myLocation: _me,
             onMapReady: _moveToMe,
           ),
 
@@ -202,9 +203,30 @@ class _Menu extends StatelessWidget {
               ),
             ),
             const Divider(),
-            const ListTile(leading: Icon(Icons.history), title: Text('Trip History')),
-            const ListTile(leading: Icon(Icons.account_balance_wallet_outlined), title: Text('Wallet')),
-            const ListTile(leading: Icon(Icons.help_outline), title: Text('Support')),
+            ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text('Trip History'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TripHistoryScreen()));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.account_balance_wallet_outlined),
+              title: const Text('Wallet'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const WalletScreen()));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.help_outline),
+              title: const Text('Support'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SupportScreen()));
+              },
+            ),
             const Spacer(),
             const Divider(),
             ListTile(

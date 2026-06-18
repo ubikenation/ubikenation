@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { handler, ok } from '../../utils/http';
 import { requireAuth } from '../../middleware/auth';
 import {
-  assignRider, cancelTrip, completeTrip, createTrip, getTrip, listAvailableTrips,
+  assignRider, cancelTrip, completeTrip, createTrip, getTrip, listAvailableTrips, listMyTrips,
   markArrived, rateTrip, respondToAdjustment, riderAdjustFare, startTrip,
 } from './trips.service';
 
@@ -35,6 +35,11 @@ tripsRouter.post('/', requireAuth, handler(async (req, res) => {
 // GET /api/trips/available — rider pulls nearby searching trips it can accept.
 tripsRouter.get('/available', requireAuth, handler(async (req, res) => {
   ok(res, await listAvailableTrips(req.user!.id));
+}));
+
+// GET /api/trips/mine — the customer's own trip history.
+tripsRouter.get('/mine', requireAuth, handler(async (req, res) => {
+  ok(res, await listMyTrips(req.user!.id));
 }));
 
 // GET /api/trips/:id — trip status for a party (customer or assigned rider).
