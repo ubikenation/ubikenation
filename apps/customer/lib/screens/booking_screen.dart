@@ -311,20 +311,47 @@ class _BookingScreenState extends State<BookingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(c.label, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.ink)),
-                    Text('Pay 50% to confirm', style: TextStyle(fontSize: 12, color: AppTheme.muted)),
+                    Row(
+                      children: [
+                        const Icon(Icons.schedule, size: 13, color: AppTheme.muted),
+                        const SizedBox(width: 3),
+                        Text('${_etaMin(c)} min  ·  Pay 50% upfront',
+                            style: const TextStyle(fontSize: 12, color: AppTheme.muted)),
+                      ],
+                    ),
                   ],
                 ),
               ),
               if (_busy)
                 const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
               else
-                Text(fare != null ? 'KES $fare' : '—',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.ink)),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(fare != null ? 'KES $fare' : '—',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.ink)),
+                    const Text('total', style: TextStyle(fontSize: 11, color: AppTheme.muted)),
+                  ],
+                ),
             ],
           ),
         ),
       ),
     );
+  }
+
+  /// Rough per-service ETA in minutes (bikes weave through traffic faster).
+  int _etaMin(ServiceCategory c) {
+    const factor = {
+      'standard_bike': 0.85,
+      'electric_bike': 0.80,
+      'economy': 1.0,
+      'comfort': 1.0,
+      'suv': 1.08,
+      'errands': 1.10,
+    };
+    final m = (_durationMin * (factor[c.id] ?? 1.0)).round();
+    return m < 2 ? 2 : m;
   }
 
   static double _haversine(double aLat, double aLng, double bLat, double bLng) {
