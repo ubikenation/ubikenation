@@ -137,6 +137,11 @@ async function main() {
   const acc = await R.post(`/api/trips/${tripId}/accept`);
   ok('POST /api/trips/:id/accept', acc.status === 200 && acc.data.data.status === 'rider_assigned', errMsg(acc.data));
 
+  // 13b) customer can fetch the assigned rider's live location (tracking)
+  const rloc = await C.get(`/api/trips/${tripId}/rider-location`);
+  ok('GET /api/trips/:id/rider-location', rloc.status === 200 && rloc.data.data.hasRider === true && rloc.data.data.riderLat != null,
+    `rider@${rloc.data?.data?.riderLat},${rloc.data?.data?.riderLng}`);
+
   // 14) rider adjusts fare, customer accepts
   const radj = await R.post(`/api/trips/${tripId}/adjust`, { proposedFare: 250, reason: 'traffic_congestion' });
   ok('POST /api/trips/:id/adjust', radj.status === 200, `capped=${radj.data?.data?.cappedFare}`);
@@ -179,6 +184,40 @@ async function main() {
   const payUrl = pay.data?.data?.authorizationUrl;
   ok('Paystack initialize (connectivity)', pay.status === 201 && !!payUrl,
     payUrl ? 'checkout URL returned' : `status=${pay.status} ${JSON.stringify(pay.data?.error ?? pay.data)}`);
+
+  // 21) errand auto fare estimate (scans listed items)
+  const errFew = await C.post('/api/fare/errand-estimate', { errandType: 'grocery_shopping', description: '2kg sugar\n1 loaf bread', distanceKm: 3, durationMin: 9 });
+  const errMany = await C.post('/api/fare/errand-estimate', { errandType: 'grocery_shopping', description: '2kg sugar\n1 loaf bread\n500g rice\n1L milk\n6 eggs\n2 soap', distanceKm: 3, durationMin: 9 });
+  const scales = (errFew.data?.data?.fare ?? 0) > 0 && (errMany.data?.data?.fare ?? 0) > (errFew.data?.data?.fare ?? 0);
+  ok('POST /api/fare/errand-estimate (scales with items)', errFew.status === 200 && scales,
+    `2 items=${errFew.data?.data?.fare} 6 items=${errMany.data?.data?.fare}`);
+
+  // 22) customer trip history
+  const mine = await C.get('/api/trips/mine');
+  const hasTrip = Array.isArray(mine.data.data) && mine.data.data.some((t: { id: string }) => t.id === tripId);
+  ok('GET /api/trips/mine (customer history)', mine.status === 200 && hasTrip, `count=${mine.data?.data?.length}`);
+
+  // 23) customer wallet endpoint
+  const cwallet = await C.get('/api/payments/wallet');
+  ok('GET /api/payments/wallet (customer)', cwallet.status === 200 && cwallet.data.data.wallet !== undefined);
+
+  // 24) rider violation report → warning on first offence
+  const viol = await R.post('/api/riders/violation', { kind: 'offline_during_trip', tripId });
+  ok('POST /api/riders/violation (warning)', viol.status === 200 && viol.data.data.severity === 'warning', `offence=${viol.data?.data?.offence}`);
+
+  // 25) admin list endpoints
+  const aRiders = await A.get('/api/admin/riders?status=activated');
+  ok('GET /api/admin/riders', aRiders.status === 200 && Array.isArray(aRiders.data.data));
+  const aTrips = await A.get('/api/admin/trips');
+  ok('GET /api/admin/trips', aTrips.status === 200 && Array.isArray(aTrips.data.data));
+  const aPayouts = await A.get('/api/admin/payouts');
+  ok('GET /api/admin/payouts', aPayouts.status === 200 && Array.isArray(aPayouts.data.data));
+  const aDocs = await A.get(`/api/admin/riders/${riderId}/documents`);
+  ok('GET /api/admin/riders/:id/documents', aDocs.status === 200 && Array.isArray(aDocs.data.data), `docs=${aDocs.data?.data?.length}`);
+
+  // 26) admin reject path (suspend a fresh rider would change state) — toggle founding instead (non-destructive)
+  const fToggle = await A.patch('/api/admin/founding', { enabled: true });
+  ok('PATCH /api/admin/founding', fToggle.status === 200);
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   process.exit(fail === 0 ? 0 : 1);
