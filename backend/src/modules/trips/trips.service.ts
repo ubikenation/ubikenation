@@ -285,6 +285,42 @@ export async function getTrip(tripId: string, userId: string) {
   throw forbidden('not your trip');
 }
 
+/**
+ * Live location of the rider assigned to a trip, for the customer's tracking
+ * map. Returns the rider's last GPS ping + pickup/dropoff so the client can draw
+ * the route and compute distance/ETA. Accessible to the trip's customer or rider.
+ */
+export async function getRiderLocation(tripId: string, userId: string) {
+  const trip = await getTrip(tripId, userId); // verifies the caller is a party
+  if (!trip.rider_id) return { hasRider: false };
+
+  const { data: rider } = await supabaseAdmin
+    .from('riders')
+    .select('last_lat, last_lng, last_location_at, rating_avg, rating_count, profile_id')
+    .eq('id', trip.rider_id)
+    .single();
+  const { data: prof } = await supabaseAdmin
+    .from('profiles')
+    .select('full_name')
+    .eq('id', rider?.profile_id ?? '')
+    .maybeSingle();
+
+  return {
+    hasRider: true,
+    riderName: prof?.full_name ?? 'Your rider',
+    rating: Number(rider?.rating_avg ?? 5),
+    ratingCount: rider?.rating_count ?? 0,
+    riderLat: rider?.last_lat ?? null,
+    riderLng: rider?.last_lng ?? null,
+    updatedAt: rider?.last_location_at ?? null,
+    pickupLat: trip.pickup_lat,
+    pickupLng: trip.pickup_lng,
+    dropoffLat: trip.dropoff_lat,
+    dropoffLng: trip.dropoff_lng,
+    status: trip.status,
+  };
+}
+
 const CLASSES_BY_KIND = {
   bike: ['standard_bike', 'electric_bike'],
   car: ['economy', 'comfort', 'suv'],

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
@@ -30,19 +31,36 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   bool _wasOffline = false;
   bool _violationReported = false;
 
+  // Push GPS frequently during the trip so the customer can track the rider.
+  Timer? _locTimer;
+
   @override
   void initState() {
     super.initState();
     _refresh();
     _poll = Timer.periodic(const Duration(seconds: 5), (_) => _refresh());
     _connSub = Connectivity().onConnectivityChanged.listen(_onConnectivity);
+    _pushLocation();
+    _locTimer = Timer.periodic(const Duration(seconds: 8), (_) => _pushLocation());
   }
 
   @override
   void dispose() {
     _poll?.cancel();
     _connSub?.cancel();
+    _locTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _pushLocation() async {
+    final repo = context.read<RiderRepository>();
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return;
+      final pos = await Geolocator.getCurrentPosition();
+      await repo.pushLocation(pos.latitude, pos.longitude);
+    } catch (_) {}
   }
 
   bool get _tripActive {

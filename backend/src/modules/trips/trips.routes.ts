@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { handler, ok } from '../../utils/http';
 import { requireAuth } from '../../middleware/auth';
 import {
-  assignRider, cancelTrip, completeTrip, createTrip, getTrip, listAvailableTrips, listMyTrips,
-  markArrived, rateTrip, respondToAdjustment, riderAdjustFare, startTrip,
+  assignRider, cancelTrip, completeTrip, createTrip, getRiderLocation, getTrip,
+  listAvailableTrips, listMyTrips, markArrived, rateTrip, respondToAdjustment,
+  riderAdjustFare, startTrip,
 } from './trips.service';
 
 export const tripsRouter = Router();
@@ -45,6 +46,11 @@ tripsRouter.get('/mine', requireAuth, handler(async (req, res) => {
 // GET /api/trips/:id — trip status for a party (customer or assigned rider).
 tripsRouter.get('/:id', requireAuth, handler(async (req, res) => {
   ok(res, await getTrip(req.params.id, req.user!.id));
+}));
+
+// GET /api/trips/:id/rider-location — live position of the assigned rider.
+tripsRouter.get('/:id/rider-location', requireAuth, handler(async (req, res) => {
+  ok(res, await getRiderLocation(req.params.id, req.user!.id));
 }));
 
 // POST /api/trips/:id/accept — rider accepts a searching trip.

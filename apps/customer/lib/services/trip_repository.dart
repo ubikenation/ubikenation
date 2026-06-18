@@ -115,6 +115,10 @@ class TripRepository {
     return Trip.fromRow(data as Map<String, dynamic>);
   }
 
+  /// Live position of the assigned rider (for the tracking map).
+  Future<Map<String, dynamic>> riderLocation(String tripId) async =>
+      await _api.get('/api/trips/$tripId/rider-location') as Map<String, dynamic>;
+
   Future<void> cancelTrip(String tripId, {String? reason}) =>
       _api.post('/api/trips/$tripId/cancel', {'reason': reason});
 
