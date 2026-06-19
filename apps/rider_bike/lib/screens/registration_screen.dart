@@ -84,17 +84,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   // ---- per-kind config ----
   List<String> get _docKeys => switch (_kind) {
         'car' => ['profile_photo_url', 'national_id_url', 'driving_license_url', 'selfie_url', 'logbook_url', 'insurance_url', 'inspection_url', 'vehicle_photo_url'],
-        'errands' => ['profile_photo_url', 'national_id_url', 'selfie_url'],
+        // errands riders register exactly like bike riders (full docs + vehicle).
         _ => ['profile_photo_url', 'national_id_url', 'driving_license_url', 'selfie_url', 'vehicle_photo_url', 'ownership_proof_url', 'insurance_url', 'inspection_url'],
       };
 
   List<({String label, String value})> get _vehicleTypes => switch (_kind) {
         'car' => const [(label: 'Economy', value: 'economy'), (label: 'Comfort', value: 'comfort'), (label: 'SUV', value: 'suv')],
-        'errands' => const [(label: 'Motorbike', value: 'standard_bike'), (label: 'Bicycle', value: 'standard_bike'), (label: 'On Foot', value: 'errands')],
         _ => const [(label: 'Standard Bike', value: 'standard_bike'), (label: 'Electric Bike', value: 'electric_bike')],
       };
 
-  bool get _hasVehicleStep => _kind != 'errands';
+  bool get _hasVehicleStep => true;
   bool get _allDocsCaptured => _docs.values.every((v) => v != null);
 
   // ---- actions ----

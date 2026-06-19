@@ -6,7 +6,8 @@ import type { RiderKind } from '../../types/domain';
 const REQUIRED_DOCS: Record<RiderKind, string[]> = {
   bike: ['profile_photo_url', 'national_id_url', 'driving_license_url', 'selfie_url', 'vehicle_photo_url', 'ownership_proof_url', 'insurance_url', 'inspection_url'],
   car: ['profile_photo_url', 'national_id_url', 'driving_license_url', 'selfie_url', 'logbook_url', 'insurance_url', 'inspection_url', 'vehicle_photo_url'],
-  errands: ['profile_photo_url', 'national_id_url', 'selfie_url'],
+  // errands riders register exactly like bike riders (full docs + vehicle).
+  errands: ['profile_photo_url', 'national_id_url', 'driving_license_url', 'selfie_url', 'vehicle_photo_url', 'ownership_proof_url', 'insurance_url', 'inspection_url'],
 };
 
 /**
