@@ -4,9 +4,9 @@ import { claimRegistrationFee, quoteRegistrationFee } from './founding.service';
 import type { RiderKind } from '../../types/domain';
 
 const REQUIRED_DOCS: Record<RiderKind, string[]> = {
-  bike: ['national_id_url', 'driving_license_url', 'profile_photo_url', 'selfie_url', 'vehicle_photo_url', 'ownership_proof_url', 'insurance_url', 'inspection_url'],
-  car: ['national_id_url', 'driving_license_url', 'selfie_url', 'logbook_url', 'insurance_url', 'inspection_url', 'vehicle_photo_url'],
-  errands: ['national_id_url', 'selfie_url'],
+  bike: ['profile_photo_url', 'national_id_url', 'driving_license_url', 'selfie_url', 'vehicle_photo_url', 'ownership_proof_url', 'insurance_url', 'inspection_url'],
+  car: ['profile_photo_url', 'national_id_url', 'driving_license_url', 'selfie_url', 'logbook_url', 'insurance_url', 'inspection_url', 'vehicle_photo_url'],
+  errands: ['profile_photo_url', 'national_id_url', 'selfie_url'],
 };
 
 /**

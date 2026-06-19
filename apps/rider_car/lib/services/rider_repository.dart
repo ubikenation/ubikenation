@@ -22,6 +22,11 @@ class RiderRepository {
   Future<void> submitDocuments(Map<String, String> documents) =>
       _api.post('/api/riders/documents', {'kind': kind, 'documents': documents});
 
+  Future<void> submitDetails(Map<String, dynamic> details, Map<String, dynamic>? vehicle) =>
+      _api.post('/api/riders/details', {'kind': kind, 'details': details, 'vehicle': vehicle});
+
+  Future<void> confirmFreeRegistration() => _api.post('/api/riders/free-registration', {'kind': kind});
+
   Future<String> payRegistration(int amount) async {
     final d = await _api.post('/api/payments/initiate', {
       'purpose': 'rider_registration',
