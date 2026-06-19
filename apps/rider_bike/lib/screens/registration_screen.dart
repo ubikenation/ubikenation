@@ -267,29 +267,45 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
             child: Stepper(
               currentStep: _step,
               type: StepperType.vertical,
+              physics: const ClampingScrollPhysics(),
               onStepContinue: _busy ? null : () => _onContinue(lastStep),
               onStepCancel: _step == 0 ? null : () => setState(() => _step -= 1),
-              controlsBuilder: (context, details) => Padding(
-                padding: const EdgeInsets.only(top: 14),
-                child: Row(
-                  children: [
-                    FilledButton(
-                      onPressed: details.onStepContinue,
-                      child: _busy
-                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : Text(_step == lastStep ? 'Submit Application' : 'Continue'),
-                    ),
-                    if (_step > 0) ...[
-                      const SizedBox(width: 8),
-                      TextButton(onPressed: details.onStepCancel, child: const Text('Back')),
-                    ],
-                  ],
-                ),
-              ),
+              onStepTapped: _busy ? null : (i) {
+                // Allow going back to an earlier step by tapping it; never skip ahead.
+                if (i < _step) setState(() => _step = i);
+              },
+              // Buttons live in the fixed bottom bar instead (always visible).
+              controlsBuilder: (context, details) => const SizedBox.shrink(),
               steps: steps,
             ),
           ),
         ],
+      ),
+      // Persistent navigation so the Continue button is ALWAYS visible, no
+      // matter how long the current step is or how far it is scrolled.
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Row(
+            children: [
+              if (_step > 0) ...[
+                OutlinedButton(
+                  onPressed: _busy ? null : () => setState(() => _step -= 1),
+                  child: const Text('Back'),
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: FilledButton(
+                  onPressed: _busy ? null : () => _onContinue(lastStep),
+                  child: _busy
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : Text(_step == lastStep ? 'Submit Application' : 'Continue'),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
