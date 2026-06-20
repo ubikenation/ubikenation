@@ -4,7 +4,7 @@ import { AppError, badRequest } from '../../utils/http';
 import { logger } from '../../utils/logger';
 import { applyWallet } from '../wallet/wallet.service';
 import { paystack } from './paystack.client';
-import { holdEscrow } from './escrow.service';
+import { holdEscrow, releaseEscrow } from './escrow.service';
 
 export type PaymentPurpose = 'trip_upfront' | 'trip_balance' | 'wallet_topup' | 'rider_registration';
 
@@ -84,10 +84,24 @@ export async function settlePayment(reference: string) {
 
   switch (payment.purpose) {
     case 'trip_upfront':
+      // Upfront 50% paid after the rider's quote was accepted → the rider is now
+      // en route. (Matching already happened; payment confirms the booking.)
+      if (payment.trip_id) {
+        await holdEscrow(payment.trip_id, payment.amount);
+        await supabaseAdmin.from('trips').update({ status: 'rider_assigned' }).eq('id', payment.trip_id);
+      }
+      break;
     case 'trip_balance':
-      if (payment.trip_id) await holdEscrow(payment.trip_id, payment.amount);
-      if (payment.purpose === 'trip_upfront' && payment.trip_id) {
-        await supabaseAdmin.from('trips').update({ status: 'searching' }).eq('id', payment.trip_id);
+      // Balance 50% paid once the customer reached the destination → the full fare
+      // is now in escrow; release it (20/80 or 25/75) and complete the trip.
+      if (payment.trip_id) {
+        await holdEscrow(payment.trip_id, payment.amount);
+        await supabaseAdmin
+          .from('trips')
+          .update({ status: 'completed', completed_at: new Date().toISOString() })
+          .eq('id', payment.trip_id)
+          .neq('status', 'completed');
+        await releaseEscrow(payment.trip_id);
       }
       break;
     case 'wallet_topup':

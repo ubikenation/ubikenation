@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/geocoding_service.dart';
 import '../services/trip_repository.dart';
 import '../theme/app_theme.dart';
-import 'paystack_webview.dart';
+import 'commuter_plans_screen.dart';
 import 'trip_screen.dart';
 
 const _errandTypes = <({String value, String label, IconData icon})>[
@@ -53,6 +53,11 @@ class _ErrandsScreenState extends State<ErrandsScreen> {
   bool _busy = false;
   String? _error;
 
+  // Recurring "commuter plan" (subscription errand).
+  bool _recurring = false;
+  String _frequency = 'weekdays'; // daily | weekdays | weekly
+  TimeOfDay _time = const TimeOfDay(hour: 8, minute: 0);
+
   @override
   void dispose() {
     _desc.dispose();
@@ -91,7 +96,10 @@ class _ErrandsScreenState extends State<ErrandsScreen> {
     }
   }
 
-  Future<void> _payAndRequest() async {
+  /// Requests the errand now (Uber/Bolt order): create it → it goes straight to
+  /// matching a nearby rider. Payment of 50% happens on the trip screen once a
+  /// rider accepts and confirms the price.
+  Future<void> _request() async {
     if (_fare == null) return;
     setState(() {
       _busy = true;
@@ -113,21 +121,39 @@ class _ErrandsScreenState extends State<ErrandsScreen> {
         errandType: _type,
         errandDescription: _desc.text.trim(),
       );
-      final checkout = await repo.initiateUpfront(trip.id, trip.upfront);
       if (!mounted) return;
-      final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(
-        builder: (_) => PaystackWebView(url: checkout.url, callbackUrl: TripRepository.paystackCallbackUrl),
-      ));
-      if (paid == true) {
-        await repo.verifyPayment(checkout.reference);
-        if (!mounted) return;
-        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => TripScreen(trip: trip)));
-      } else {
-        setState(() {
-          _error = 'Payment was not completed. You can try again.';
-          _busy = false;
-        });
-      }
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => TripScreen(trip: trip)));
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _busy = false;
+      });
+    }
+  }
+
+  /// Saves this errand as a recurring commuter plan (auto-priced). Each due run
+  /// spins up a normal errand trip in the background.
+  Future<void> _saveCommuterPlan() async {
+    if (_fare == null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final repo = context.read<TripRepository>();
+      await repo.createPlan({
+        'errandType': _type,
+        'description': _desc.text.trim(),
+        'pickup': {'lat': widget.pickup.lat, 'lng': widget.pickup.lng, 'address': widget.pickup.name},
+        'dropoff': {'lat': widget.dropoff.lat, 'lng': widget.dropoff.lng, 'address': widget.dropoff.name},
+        'distanceKm': double.parse(widget.distanceKm.toStringAsFixed(2)),
+        'durationMin': double.parse(widget.durationMin.toStringAsFixed(1)),
+        'frequency': _frequency,
+        'timeOfDay': '${_time.hour.toString().padLeft(2, '0')}:${_time.minute.toString().padLeft(2, '0')}',
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Commuter plan created.')));
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const CommuterPlansScreen()));
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -201,12 +227,17 @@ class _ErrandsScreenState extends State<ErrandsScreen> {
                   const SizedBox(height: 4),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: Text('Scanned $_itemCount item(s). Pay KES $_upfront (50%) now. A rider may adjust this by up to 30% with a valid reason.',
+                    child: Text('Scanned $_itemCount item(s). You\'ll pay KES $_upfront (50%) once a rider is matched, and the balance on completion.',
                         style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
                   ),
                 ],
               ),
             ),
+
+          if (_fare != null) ...[
+            const SizedBox(height: 14),
+            _recurringSection(),
+          ],
 
           if (_error != null)
             Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(_error!, style: const TextStyle(color: Colors.red))),
@@ -221,11 +252,65 @@ class _ErrandsScreenState extends State<ErrandsScreen> {
             )
           else
             FilledButton(
-              onPressed: _busy ? null : _payAndRequest,
+              onPressed: _busy ? null : (_recurring ? _saveCommuterPlan : _request),
               child: _busy
                   ? const SizedBox(height: 22, width: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Text('Pay KES $_upfront (50%) & Request'),
+                  : Text(_recurring ? 'Create commuter plan' : 'Request errand'),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// Recurring "commuter plan" controls — turn the errand into a subscription
+  /// that re-runs on a schedule (used a lot for regular errands).
+  Widget _recurringSection() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            value: _recurring,
+            onChanged: (v) => setState(() => _recurring = v),
+            title: const Text('Make this a commuter plan', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text('Repeat this errand automatically on a schedule', style: TextStyle(fontSize: 12, color: AppTheme.muted)),
+            secondary: const Icon(Icons.repeat, color: AppTheme.primary),
+          ),
+          if (_recurring) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButtonFormField<String>(
+                    initialValue: _frequency,
+                    decoration: const InputDecoration(labelText: 'Repeat', isDense: true, border: OutlineInputBorder()),
+                    items: const [
+                      DropdownMenuItem(value: 'daily', child: Text('Every day')),
+                      DropdownMenuItem(value: 'weekdays', child: Text('Weekdays')),
+                      DropdownMenuItem(value: 'weekly', child: Text('Weekly')),
+                    ],
+                    onChanged: (v) => setState(() => _frequency = v ?? 'weekdays'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final t = await showTimePicker(context: context, initialTime: _time);
+                    if (t != null) setState(() => _time = t);
+                  },
+                  icon: const Icon(Icons.access_time, size: 18),
+                  label: Text(_time.format(context)),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

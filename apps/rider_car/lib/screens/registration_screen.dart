@@ -52,6 +52,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _color = TextEditingController();
   final _insuranceCo = TextEditingController();
   late String _vehicleType = _vehicleTypes.first.value;
+  String? _platePhoto; // number-plate close-up (fetched by the customer app)
 
   late final Map<String, String?> _docs = {for (final k in _docKeys) k: null};
 
@@ -193,7 +194,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       await repo.submitDetails(
         _details,
         _hasVehicleStep
-            ? {'vehicleClass': _vehicleType, 'plate': _plate.text.trim(), 'make': _make.text.trim(), 'model': _model.text.trim(), 'color': _color.text.trim()}
+            ? {
+                'vehicleClass': _vehicleType,
+                'plate': _plate.text.trim(),
+                'make': _make.text.trim(),
+                'model': _model.text.trim(),
+                'color': _color.text.trim(),
+                if (_platePhoto != null) 'platePhoto': _platePhoto,
+                if (_docs['vehicle_photo_url'] != null) 'vehiclePhoto': _docs['vehicle_photo_url'],
+              }
             : null,
       );
       await repo.submitDocuments({for (final e in _docs.entries) e.key: e.value!});
@@ -366,9 +375,35 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           _tf(_plate, 'Number plate', cap: true),
           _tf(_color, 'Colour', cap: true),
           _tf(_insuranceCo, 'Insurance company', cap: true),
+          const SizedBox(height: 6),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(_platePhoto != null ? Icons.check_circle : Icons.add_a_photo,
+                color: _platePhoto != null ? AppTheme.green : AppTheme.muted),
+            title: const Text('Number-plate photo'),
+            subtitle: const Text('Clear close-up of your plate — shown to customers', style: TextStyle(fontSize: 11)),
+            trailing: _uploading == 'plate_photo_url'
+                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                : TextButton(onPressed: _capturePlatePhoto, child: Text(_platePhoto != null ? 'Re-upload' : 'Upload')),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _capturePlatePhoto() async {
+    setState(() {
+      _uploading = 'plate_photo_url';
+      _error = null;
+    });
+    try {
+      final path = await _storage.pickAndUploadDoc('plate_photo_url');
+      if (path != null && mounted) setState(() => _platePhoto = path);
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Upload failed: $e');
+    } finally {
+      if (mounted) setState(() => _uploading = null);
+    }
   }
 
   Widget _feeStep(FeeQuote? fee) {

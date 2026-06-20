@@ -31,7 +31,7 @@ export async function findNearbyRiders(
   vehicleClass: VehicleClass,
   pickupLat: number,
   pickupLng: number,
-  radiusKm = 7,
+  radiusKm = 5,
   limit = 10,
 ): Promise<NearbyRider[]> {
   const kind = VEHICLE_CLASS_KIND[vehicleClass];
@@ -56,4 +56,19 @@ export async function findNearbyRiders(
     .filter((r) => r.distanceKm <= radiusKm)
     .sort((a, b) => a.distanceKm - b.distanceKm)
     .slice(0, limit);
+}
+
+/**
+ * Randomly shuffles a list (Fisher–Yates). Within the 5 km radius every nearby
+ * rider is equally eligible, so we surface requests in a random order rather than
+ * strictly nearest-first. That way, if the customer passes on one rider, a re-search
+ * is likely to reach a different rider next.
+ */
+export function shuffle<T>(items: readonly T[]): T[] {
+  const a = [...items];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }

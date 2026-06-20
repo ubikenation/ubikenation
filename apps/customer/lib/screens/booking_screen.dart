@@ -12,7 +12,6 @@ import '../services/trip_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
 import 'errands_screen.dart';
-import 'paystack_webview.dart';
 import 'trip_screen.dart';
 
 /// Booking flow: confirm pickup (your current location, named) → search and pick
@@ -41,6 +40,10 @@ class _BookingScreenState extends State<BookingScreen> {
   bool _loadingFares = false;
   String? _error;
   bool _busy = false;
+
+  // Schedule-for-later (Uber/Bolt style).
+  bool _scheduled = false;
+  DateTime? _scheduleAt;
 
   @override
   void initState() {
@@ -151,49 +154,78 @@ class _BookingScreenState extends State<BookingScreen> {
     _book(category);
   }
 
+  /// Requests the ride (Uber/Bolt order): create the trip → it goes straight to
+  /// matching a nearby rider. No payment yet — the customer pays 50% only after a
+  /// rider accepts and confirms the price (handled on the trip screen).
   Future<void> _book(ServiceCategory category) async {
     if (_pickup == null || _dropoff == null) return;
+    final repo = context.read<TripRepository>();
+    if (_scheduled && _scheduleAt == null) {
+      await _pickScheduleTime();
+      if (_scheduleAt == null) return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      final repo = context.read<TripRepository>();
-      final trip = await repo.createTrip(
-        tripType: category.tripType,
-        vehicleClass: category.id,
-        pickupLat: _pickup!.lat,
-        pickupLng: _pickup!.lng,
-        pickupAddress: _pickup!.name,
-        dropoffLat: _dropoff!.lat,
-        dropoffLng: _dropoff!.lng,
-        dropoffAddress: _dropoff!.name,
-        distanceKm: double.parse(_distanceKm.toStringAsFixed(2)),
-        durationMin: double.parse(_durationMin.toStringAsFixed(1)),
-      );
-      final checkout = await repo.initiateUpfront(trip.id, trip.upfront);
+      final d = double.parse(_distanceKm.toStringAsFixed(2));
+      final t = double.parse(_durationMin.toStringAsFixed(1));
+      final trip = _scheduled
+          ? await repo.scheduleTrip(
+              tripType: category.tripType,
+              vehicleClass: category.id,
+              pickupLat: _pickup!.lat,
+              pickupLng: _pickup!.lng,
+              pickupAddress: _pickup!.name,
+              dropoffLat: _dropoff!.lat,
+              dropoffLng: _dropoff!.lng,
+              dropoffAddress: _dropoff!.name,
+              distanceKm: d,
+              durationMin: t,
+              scheduledFor: _scheduleAt!,
+            )
+          : await repo.createTrip(
+              tripType: category.tripType,
+              vehicleClass: category.id,
+              pickupLat: _pickup!.lat,
+              pickupLng: _pickup!.lng,
+              pickupAddress: _pickup!.name,
+              dropoffLat: _dropoff!.lat,
+              dropoffLng: _dropoff!.lng,
+              dropoffAddress: _dropoff!.name,
+              distanceKm: d,
+              durationMin: t,
+            );
       if (!mounted) return;
-      final paid = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (_) => PaystackWebView(url: checkout.url, callbackUrl: TripRepository.paystackCallbackUrl),
-        ),
-      );
-      if (paid == true) {
-        await repo.verifyPayment(checkout.reference);
-        if (!mounted) return;
-        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => TripScreen(trip: trip)));
-      } else {
-        setState(() {
-          _error = 'Payment was not completed. You can try again.';
-          _busy = false;
-        });
+      if (_scheduled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ride scheduled. We\'ll find you a rider at the set time.')),
+        );
+        Navigator.of(context).pop();
+        return;
       }
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => TripScreen(trip: trip)));
     } catch (e) {
       setState(() {
         _error = e.toString();
         _busy = false;
       });
     }
+  }
+
+  Future<void> _pickScheduleTime() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: now.add(const Duration(hours: 1)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 14)),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(now.add(const Duration(hours: 1))));
+    if (time == null) return;
+    setState(() => _scheduleAt = DateTime(date.year, date.month, date.day, time.hour, time.minute));
   }
 
   @override
@@ -266,6 +298,34 @@ class _BookingScreenState extends State<BookingScreen> {
                   const SizedBox(height: 8),
                   Text('Choose a service  ·  ${_distanceKm.toStringAsFixed(1)} km',
                       style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.ink)),
+                  const SizedBox(height: 6),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: _scheduled,
+                    onChanged: (v) => setState(() {
+                      _scheduled = v;
+                      if (!v) _scheduleAt = null;
+                    }),
+                    title: const Text('Schedule for later', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(
+                      _scheduled
+                          ? (_scheduleAt == null
+                              ? 'Pick a date & time when you choose a service'
+                              : 'For ${_scheduleAt!.day}/${_scheduleAt!.month} at ${TimeOfDay.fromDateTime(_scheduleAt!).format(context)}')
+                          : 'Request now',
+                      style: const TextStyle(fontSize: 12, color: AppTheme.muted),
+                    ),
+                    secondary: const Icon(Icons.schedule, color: AppTheme.primary),
+                  ),
+                  if (_scheduled)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _pickScheduleTime,
+                        icon: const Icon(Icons.edit_calendar, size: 18),
+                        label: Text(_scheduleAt == null ? 'Set date & time' : 'Change date & time'),
+                      ),
+                    ),
                   const SizedBox(height: 10),
                   if (_loadingFares)
                     const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator(color: AppTheme.primary)))
@@ -315,7 +375,7 @@ class _BookingScreenState extends State<BookingScreen> {
                       children: [
                         const Icon(Icons.schedule, size: 13, color: AppTheme.muted),
                         const SizedBox(width: 3),
-                        Text('${_etaMin(c)} min  ·  Pay 50% upfront',
+                        Text('${_etaMin(c)} min  ·  Pay 50% once matched',
                             style: const TextStyle(fontSize: 12, color: AppTheme.muted)),
                       ],
                     ),

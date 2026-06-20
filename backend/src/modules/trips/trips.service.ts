@@ -2,8 +2,10 @@ import { supabaseAdmin } from '../../config/supabase';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../utils/http';
 import { calculateFare, estimateErrandFare, validateAdjustment } from '../fare/fare.service';
 import { releaseEscrow, refundEscrow } from '../payments/escrow.service';
-import { VEHICLE_CLASS_KIND, type AdjustmentReason, type VehicleClass } from '../../types/domain';
-import { haversineKm } from '../matching/matching.service';
+import {
+  COMMISSION_ADJUSTED, COMMISSION_NO_ADJUST, VEHICLE_CLASS_KIND, type VehicleClass,
+} from '../../types/domain';
+import { haversineKm, shuffle } from '../matching/matching.service';
 
 export interface CreateTripInput {
   customerId: string;
@@ -19,8 +21,11 @@ export interface CreateTripInput {
 }
 
 /**
- * Creates a trip in `pending_payment`, calculating the fare server-side and the 50/50 split.
- * The trip moves to `searching` only after the upfront payment settles (see payments.service).
+ * Creates a trip and immediately starts matching (Uber/Bolt order): the trip goes
+ * straight to `searching` with NO upfront payment yet. A nearby rider accepts, then
+ * quotes the fare, and only then is the customer shown the price and pays 50%.
+ * A `scheduledFor` time parks the trip in `scheduled` until it is due.
+ * The fare computed here is the system estimate; it becomes the real price at quote time.
  */
 export async function createTrip(input: CreateTripInput) {
   // Errands are priced from the listed items; rides from distance/time/surge.
@@ -44,7 +49,7 @@ export async function createTrip(input: CreateTripInput) {
       customer_id: input.customerId,
       trip_type: input.tripType,
       vehicle_class: input.vehicleClass,
-      status: 'pending_payment',
+      status: input.scheduledFor ? 'scheduled' : 'searching',
       pickup_lat: input.pickup.lat,
       pickup_lng: input.pickup.lng,
       pickup_address: input.pickup.address,
@@ -74,11 +79,15 @@ export async function createTrip(input: CreateTripInput) {
   };
 }
 
-/** A rider accepts a searching trip. Verifies vehicle class matches the rider's kind. */
+/**
+ * A rider accepts a searching trip → `quote_pending`. The customer still only sees
+ * "finding your rider" at this point; the rider now sets the price (see quoteFare).
+ * Riders the customer has already passed on (declined_rider_ids) cannot accept.
+ */
 export async function assignRider(tripId: string, riderProfileId: string) {
   const { data: trip } = await supabaseAdmin
     .from('trips')
-    .select('id, status, vehicle_class')
+    .select('id, status, vehicle_class, declined_rider_ids')
     .eq('id', tripId)
     .single();
   if (!trip) throw notFound('trip not found');
@@ -94,10 +103,13 @@ export async function assignRider(tripId: string, riderProfileId: string) {
   if (VEHICLE_CLASS_KIND[trip.vehicle_class as VehicleClass] !== rider.kind) {
     throw conflict('rider kind does not match the requested service');
   }
+  if ((trip.declined_rider_ids as string[] | null)?.includes(rider.id)) {
+    throw conflict('this request is no longer available to you');
+  }
 
   const { data, error } = await supabaseAdmin
     .from('trips')
-    .update({ rider_id: rider.id, status: 'rider_assigned', assigned_at: new Date().toISOString() })
+    .update({ rider_id: rider.id, status: 'quote_pending', assigned_at: new Date().toISOString() })
     .eq('id', tripId)
     .eq('status', 'searching') // optimistic guard against double-accept
     .select('id, status')
@@ -106,52 +118,83 @@ export async function assignRider(tripId: string, riderProfileId: string) {
   return data;
 }
 
-/** Rider proposes an adjusted fare (<= +30%, approved reason). Customer must accept. */
-export async function riderAdjustFare(tripId: string, riderProfileId: string, proposedFare: number, reason: AdjustmentReason) {
+/**
+ * The rider, after accepting, confirms the price: either accepts the auto fare
+ * (no `proposedFare`, or ≤ base) or nudges it up to +30% (no reason needed).
+ * Adjusting at all raises the company commission from 20% → 25%. The trip then
+ * moves to `awaiting_payment` and the customer is shown the price to pay 50%.
+ */
+export async function quoteFare(tripId: string, riderProfileId: string, proposedFare?: number) {
   const trip = await loadTripForRider(tripId, riderProfileId);
-  if (!['rider_assigned', 'arrived'].includes(trip.status)) {
-    throw conflict('fare can only be adjusted before the trip starts');
+  if (trip.status !== 'quote_pending') throw conflict('this trip is not awaiting your quote');
+
+  const base = trip.base_fare;
+  const adjusted = proposedFare != null && proposedFare > base;
+
+  let finalFare = base;
+  let cap: ReturnType<typeof validateAdjustment> | null = null;
+  if (adjusted) {
+    cap = validateAdjustment({ originalFare: base, proposedFare: proposedFare! });
+    finalFare = cap.cappedFare;
   }
-  const result = validateAdjustment({ originalFare: trip.base_fare, proposedFare, reason });
+
+  const commissionRate = adjusted ? COMMISSION_ADJUSTED : COMMISSION_NO_ADJUST;
+  const upfront = roundTo5(finalFare * 0.5);
 
   await supabaseAdmin
     .from('trips')
-    .update({ adjusted_fare: result.cappedFare, adjustment_reason: reason, adjustment_accepted: null })
-    .eq('id', tripId);
-  return result;
+    .update({
+      status: 'awaiting_payment',
+      adjusted,
+      adjusted_fare: adjusted ? finalFare : null,
+      final_fare: finalFare,
+      commission_rate: commissionRate,
+      upfront_amount: upfront,
+      balance_amount: finalFare - upfront,
+    })
+    .eq('id', tripId)
+    .eq('status', 'quote_pending');
+
+  return {
+    finalFare,
+    adjusted,
+    upfront,
+    balance: finalFare - upfront,
+    maxAllowedFare: cap?.maxAllowedFare ?? roundTo1(base * 1.3),
+  };
 }
 
-/** Customer accepts/declines the rider's adjusted fare. Decline re-broadcasts. */
-export async function respondToAdjustment(tripId: string, customerId: string, accept: boolean) {
+/**
+ * Customer passes on the current rider (long wait / cancel-rider before paying):
+ * the rider is added to declined_rider_ids and the trip re-enters `searching` so a
+ * different nearby rider can pick it up. Only valid before payment.
+ */
+export async function requeryTrip(tripId: string, customerId: string) {
   const { data: trip } = await supabaseAdmin
     .from('trips')
-    .select('id, customer_id, adjusted_fare, base_fare, status')
+    .select('id, customer_id, status, rider_id, declined_rider_ids')
     .eq('id', tripId)
     .single();
   if (!trip) throw notFound('trip not found');
   if (trip.customer_id !== customerId) throw forbidden();
-  if (trip.adjusted_fare == null) throw badRequest('no pending adjustment');
-
-  if (accept) {
-    const upfront = Math.round(trip.adjusted_fare * 0.5 / 5) * 5;
-    await supabaseAdmin
-      .from('trips')
-      .update({
-        adjustment_accepted: true,
-        final_fare: trip.adjusted_fare,
-        upfront_amount: upfront,
-        balance_amount: trip.adjusted_fare - upfront,
-      })
-      .eq('id', tripId);
-    return { accepted: true, finalFare: trip.adjusted_fare };
+  if (!['quote_pending', 'awaiting_payment', 'searching'].includes(trip.status)) {
+    throw conflict('cannot change rider at this stage');
   }
+  const declined = new Set((trip.declined_rider_ids as string[] | null) ?? []);
+  if (trip.rider_id) declined.add(trip.rider_id);
 
-  // declined: drop the rider and re-search
   await supabaseAdmin
     .from('trips')
-    .update({ adjustment_accepted: false, rider_id: null, status: 'searching', final_fare: trip.base_fare })
+    .update({
+      status: 'searching',
+      rider_id: null,
+      adjusted: false,
+      adjusted_fare: null,
+      commission_rate: null,
+      declined_rider_ids: [...declined],
+    })
     .eq('id', tripId);
-  return { accepted: false, finalFare: trip.base_fare };
+  return { status: 'searching' };
 }
 
 export async function markArrived(tripId: string, riderProfileId: string) {
@@ -171,10 +214,35 @@ export async function startTrip(tripId: string, riderProfileId: string) {
   return { status: 'in_progress' };
 }
 
-/** Rider completes the trip → release escrow (20/80 split, queue payout). */
+/**
+ * Rider taps "reached destination". The other 50% is due now: if the customer has
+ * already funded the balance (escrow holds the full fare) we complete and release
+ * (20/80 or 25/75); otherwise the trip waits in `awaiting_balance` until the balance
+ * payment settles (payments.service completes + releases on that webhook).
+ */
 export async function completeTrip(tripId: string, riderProfileId: string) {
   const trip = await loadTripForRider(tripId, riderProfileId);
-  if (trip.status !== 'in_progress') throw conflict('only in-progress trips can be completed');
+  if (!['in_progress', 'awaiting_balance'].includes(trip.status)) {
+    throw conflict('only an in-progress trip can be finished');
+  }
+
+  const { data: full } = await supabaseAdmin
+    .from('trips')
+    .select('final_fare')
+    .eq('id', tripId)
+    .single();
+  const { data: esc } = await supabaseAdmin
+    .from('escrow')
+    .select('amount, status')
+    .eq('trip_id', tripId)
+    .maybeSingle();
+
+  const funded = esc && esc.status === 'held' && esc.amount >= (full?.final_fare ?? Infinity);
+  if (!funded) {
+    await supabaseAdmin.from('trips').update({ status: 'awaiting_balance' }).eq('id', tripId);
+    return { status: 'awaiting_balance', balanceDue: true };
+  }
+
   await supabaseAdmin
     .from('trips')
     .update({ status: 'completed', completed_at: new Date().toISOString() })
@@ -225,7 +293,11 @@ async function autoGradeRider(tripId: string) {
   }
 }
 
-/** Customer cancels. Before start → 100% refund; after start → blocked (dispute path). */
+/**
+ * Customer cancels. Any time before the ride starts → the held upfront 50% is
+ * refunded to the wallet immediately; after start → blocked (dispute path).
+ * `reason` comes from the app's Uber-style cancellation question sheet.
+ */
 export async function cancelTrip(tripId: string, customerId: string, reason?: string) {
   const { data: trip } = await supabaseAdmin
     .from('trips')
@@ -234,15 +306,50 @@ export async function cancelTrip(tripId: string, customerId: string, reason?: st
     .single();
   if (!trip) throw notFound('trip not found');
   if (trip.customer_id !== customerId) throw forbidden();
-  if (['in_progress', 'completed'].includes(trip.status)) {
+  if (['in_progress', 'awaiting_balance', 'completed'].includes(trip.status)) {
     throw conflict('trip already started; open a dispute instead');
   }
-  await refundEscrow(tripId).catch(() => undefined); // no-op if nothing was held
+  await refundEscrow(tripId).catch(() => undefined); // immediate refund; no-op if nothing held
   await supabaseAdmin
     .from('trips')
     .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancel_reason: reason })
     .eq('id', tripId);
   return { status: 'cancelled' };
+}
+
+/**
+ * Customer pushes their live GPS so the assigned rider can trace them to the pickup.
+ * Allowed for the trip's customer while the trip is active.
+ */
+export async function updateCustomerLocation(tripId: string, customerId: string, lat: number, lng: number) {
+  const { data: trip } = await supabaseAdmin.from('trips').select('id, customer_id').eq('id', tripId).single();
+  if (!trip) throw notFound('trip not found');
+  if (trip.customer_id !== customerId) throw forbidden();
+  await supabaseAdmin
+    .from('trips')
+    .update({ customer_lat: lat, customer_lng: lng, customer_location_at: new Date().toISOString() })
+    .eq('id', tripId);
+  return { ok: true };
+}
+
+/**
+ * The customer's live point + pickup/dropoff, for the rider's tracing map (mirror of
+ * getRiderLocation). Accessible to the trip's rider or customer.
+ */
+export async function getCustomerLocation(tripId: string, userId: string) {
+  const trip = await getTrip(tripId, userId);
+  return {
+    customerLat: trip.customer_lat ?? trip.pickup_lat,
+    customerLng: trip.customer_lng ?? trip.pickup_lng,
+    updatedAt: trip.customer_location_at ?? null,
+    pickupLat: trip.pickup_lat,
+    pickupLng: trip.pickup_lng,
+    dropoffLat: trip.dropoff_lat,
+    dropoffLng: trip.dropoff_lng,
+    pickupAddress: trip.pickup_address,
+    dropoffAddress: trip.dropoff_address,
+    status: trip.status,
+  };
 }
 
 /** Customer rates the rider after completion; updates the rider's rolling average. */
@@ -291,21 +398,27 @@ export async function listAvailableTrips(riderProfileId: string) {
   const classes = CLASSES_BY_KIND[rider.kind as keyof typeof CLASSES_BY_KIND] ?? [];
   const { data: trips } = await supabaseAdmin
     .from('trips')
-    .select('id, vehicle_class, pickup_lat, pickup_lng, pickup_address, dropoff_address, base_fare, final_fare, distance_km, duration_min, created_at')
+    .select('id, vehicle_class, pickup_lat, pickup_lng, pickup_address, dropoff_address, base_fare, final_fare, distance_km, duration_min, created_at, declined_rider_ids')
     .eq('status', 'searching')
     .in('vehicle_class', classes)
     .order('created_at', { ascending: false })
     .limit(30);
 
-  const list = trips ?? [];
+  // Drop requests the customer already passed on for this rider, and strip the
+  // internal declined list before returning.
+  const list = (trips ?? [])
+    .filter((t) => !((t.declined_rider_ids as string[] | null) ?? []).includes(rider.id))
+    .map(({ declined_rider_ids: _omit, ...t }) => t);
   if (rider.last_lat == null || rider.last_lng == null) return list;
-  // Only surface trips whose pickup is within range of this rider, nearest first.
-  // The closest rider in range gets first sight of the request.
-  const RADIUS_KM = 7;
-  return list
+
+  // Surface only pickups within 5 km. Every rider in range is equally eligible,
+  // so the order is randomised — a customer who passes on one rider is likely to
+  // reach a different rider on the re-search.
+  const RADIUS_KM = 5;
+  const inRange = list
     .map((t) => ({ ...t, pickupDistanceKm: haversineKm(rider.last_lat!, rider.last_lng!, t.pickup_lat, t.pickup_lng) }))
-    .filter((t) => t.pickupDistanceKm <= RADIUS_KM)
-    .sort((a, b) => a.pickupDistanceKm - b.pickupDistanceKm);
+    .filter((t) => t.pickupDistanceKm <= RADIUS_KM);
+  return shuffle(inRange);
 }
 
 /** The authenticated customer's own trips (history). */
@@ -342,7 +455,7 @@ export async function getRiderLocation(tripId: string, userId: string) {
 
   const { data: rider } = await supabaseAdmin
     .from('riders')
-    .select('last_lat, last_lng, last_location_at, rating_avg, rating_count, profile_id, profile_photo_url, selfie_url')
+    .select('id, last_lat, last_lng, last_location_at, rating_avg, rating_count, profile_id, profile_photo_url, selfie_url, vehicle_photo_url, plate_number, plate_photo_url, vehicle_make, vehicle_model, vehicle_color')
     .eq('id', trip.rider_id)
     .single();
   const { data: prof } = await supabaseAdmin
@@ -351,13 +464,25 @@ export async function getRiderLocation(tripId: string, userId: string) {
     .eq('id', rider?.profile_id ?? '')
     .maybeSingle();
 
+  // A car rider may have its plate/photos on the vehicles row instead of riders.
+  const { data: vehicle } = await supabaseAdmin
+    .from('vehicles')
+    .select('plate_number, make, model, color, plate_photo_url')
+    .eq('rider_id', trip.rider_id)
+    .limit(1)
+    .maybeSingle();
+
+  const sign = async (path?: string | null) => {
+    if (!path) return null;
+    const { data } = await supabaseAdmin.storage.from('rider-documents').createSignedUrl(path, 60 * 60);
+    return data?.signedUrl ?? null;
+  };
+
   // Signed URL for the rider's profile photo (private bucket), for the chat/tracking UI.
   let photoUrl: string | null = prof?.avatar_url ?? null;
-  const photoPath = rider?.profile_photo_url ?? rider?.selfie_url;
-  if (!photoUrl && photoPath) {
-    const { data: signed } = await supabaseAdmin.storage.from('rider-documents').createSignedUrl(photoPath, 60 * 60);
-    photoUrl = signed?.signedUrl ?? null;
-  }
+  if (!photoUrl) photoUrl = await sign(rider?.profile_photo_url ?? rider?.selfie_url);
+  const vehiclePhoto = await sign(rider?.vehicle_photo_url);
+  const platePhoto = await sign(rider?.plate_photo_url ?? vehicle?.plate_photo_url);
 
   return {
     hasRider: true,
@@ -365,6 +490,13 @@ export async function getRiderLocation(tripId: string, userId: string) {
     riderPhoto: photoUrl,
     rating: Number(rider?.rating_avg ?? 5),
     ratingCount: rider?.rating_count ?? 0,
+    // Vehicle identity so the customer recognises the rider, Bolt-style.
+    plateNumber: rider?.plate_number ?? vehicle?.plate_number ?? null,
+    vehicleMake: rider?.vehicle_make ?? vehicle?.make ?? null,
+    vehicleModel: rider?.vehicle_model ?? vehicle?.model ?? null,
+    vehicleColor: rider?.vehicle_color ?? vehicle?.color ?? null,
+    vehiclePhoto,
+    platePhoto,
     riderLat: rider?.last_lat ?? null,
     riderLng: rider?.last_lng ?? null,
     updatedAt: rider?.last_location_at ?? null,
@@ -375,6 +507,9 @@ export async function getRiderLocation(tripId: string, userId: string) {
     status: trip.status,
   };
 }
+
+const roundTo5 = (n: number) => Math.round(n / 5) * 5;
+const roundTo1 = (n: number) => Math.round(n);
 
 const CLASSES_BY_KIND = {
   bike: ['standard_bike', 'electric_bike'],

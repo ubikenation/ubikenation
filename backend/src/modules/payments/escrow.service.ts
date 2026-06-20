@@ -9,8 +9,16 @@ import { splitCommission } from './commission';
  * While status='held' and the trip hasn't started, a cancel triggers a full refund.
  */
 export async function holdEscrow(tripId: string, amount: number) {
+  // Accumulate: the upfront 50% is held first, then the balance 50% is added on
+  // top so escrow.amount reflects the full fare actually paid in (used for refunds).
+  const { data: existing } = await supabaseAdmin
+    .from('escrow')
+    .select('amount, status')
+    .eq('trip_id', tripId)
+    .maybeSingle();
+  const prior = existing && existing.status === 'held' ? existing.amount : 0;
   const { error } = await supabaseAdmin.from('escrow').upsert(
-    { trip_id: tripId, amount, status: 'held', held_at: new Date().toISOString() },
+    { trip_id: tripId, amount: prior + amount, status: 'held', held_at: new Date().toISOString() },
     { onConflict: 'trip_id' },
   );
   if (error) throw new AppError(500, `escrow hold failed: ${error.message}`);
@@ -23,7 +31,7 @@ export async function holdEscrow(tripId: string, amount: number) {
 export async function releaseEscrow(tripId: string) {
   const { data: trip, error } = await supabaseAdmin
     .from('trips')
-    .select('id, rider_id, final_fare')
+    .select('id, rider_id, final_fare, commission_rate')
     .eq('id', tripId)
     .single();
   if (error || !trip) throw new AppError(404, 'trip not found for escrow release');
@@ -33,7 +41,8 @@ export async function releaseEscrow(tripId: string) {
   if (esc?.status === 'released') return; // idempotent
 
   const gross = trip.final_fare ?? 0;
-  const split = splitCommission(gross);
+  // 20% normally, 25% when the rider adjusted the fare (commission_rate set at quote time).
+  const split = splitCommission(gross, trip.commission_rate != null ? Number(trip.commission_rate) : undefined);
 
   const { data: rider } = await supabaseAdmin
     .from('riders')

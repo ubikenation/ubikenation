@@ -239,10 +239,11 @@ class SupportScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const faqs = [
-      ('How do I pay?', 'Pay 50% upfront with Paystack to confirm, and the remaining 50% after your trip completes.'),
-      ('Can I cancel?', 'Yes — cancel before the rider starts the trip for a full refund to your wallet.'),
+      ('How do I pay?', 'Once a rider is matched you pay 50% with Paystack to confirm, and the remaining 50% when you reach your destination.'),
+      ('Can I cancel?', 'Yes — cancel before the rider starts the trip and your payment is refunded to your wallet right away.'),
       ('Why text-only chat?', 'For your safety, chat is text-only and auto-moderated. No phone numbers are shared.'),
-      ('How are fares set?', 'Fares are calculated from distance, time and conditions. Riders may adjust by up to 30% with a valid reason, which you can accept or decline.'),
+      ('How are fares set?', 'Fares are calculated from distance, time and conditions. The price you pay is confirmed before you pay the first 50%.'),
+      ('What are commuter plans?', 'For errands you do regularly, set up a commuter plan to repeat them automatically on a daily, weekday or weekly schedule.'),
     ];
     return Scaffold(
       appBar: AppBar(title: const Text('Support')),

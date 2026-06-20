@@ -136,7 +136,18 @@ export async function submitDetails(
     .maybeSingle();
   if (!rider) throw notFound('register first');
 
-  await supabaseAdmin.from('riders').update({ details }).eq('id', rider.id);
+  // Denormalise the vehicle identity onto the rider row too, so the customer app can
+  // fetch "rider + car + plate" in a single read during a trip (Bolt-style).
+  const riderPatch: Record<string, unknown> = { details };
+  if (vehicle) {
+    if (typeof vehicle.plate === 'string') riderPatch.plate_number = vehicle.plate;
+    if (typeof vehicle.make === 'string') riderPatch.vehicle_make = vehicle.make;
+    if (typeof vehicle.model === 'string') riderPatch.vehicle_model = vehicle.model;
+    if (typeof vehicle.color === 'string') riderPatch.vehicle_color = vehicle.color;
+    if (typeof vehicle.platePhoto === 'string') riderPatch.plate_photo_url = vehicle.platePhoto;
+    if (typeof vehicle.vehiclePhoto === 'string') riderPatch.vehicle_photo_url = vehicle.vehiclePhoto;
+  }
+  await supabaseAdmin.from('riders').update(riderPatch).eq('id', rider.id);
 
   // Keep the profile's M-Pesa number / name in sync if provided.
   const profilePatch: Record<string, unknown> = {};
@@ -155,6 +166,7 @@ export async function submitDetails(
       make: vehicle.make as string | undefined,
       model: vehicle.model as string | undefined,
       color: vehicle.color as string | undefined,
+      plate_photo_url: vehicle.platePhoto as string | undefined,
     });
   }
   return { ok: true };

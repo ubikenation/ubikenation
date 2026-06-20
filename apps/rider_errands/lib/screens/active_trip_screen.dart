@@ -6,13 +6,14 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
-import '../models/models.dart';
 import '../services/rider_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
 
-/// The accepted-trip workflow: adjust fare (≤30%, approved reason) → arrived →
-/// start → complete. Reinforces the "stay online during the trip" rule.
+/// The accepted-trip workflow: confirm the price (accept the auto fare, or nudge it
+/// up to +30% — no reason needed) → the customer pays 50% → trace the customer to
+/// the pickup → arrived → start → reach destination → customer pays the balance →
+/// complete. Reinforces the "stay online during the trip" rule.
 class ActiveTripScreen extends StatefulWidget {
   const ActiveTripScreen({super.key, required this.tripId});
   final String tripId;
@@ -23,6 +24,7 @@ class ActiveTripScreen extends StatefulWidget {
 
 class _ActiveTripScreenState extends State<ActiveTripScreen> {
   Map<String, dynamic>? _trip;
+  Map<String, dynamic>? _custLoc;
   Timer? _poll;
   String? _error;
 
@@ -91,6 +93,11 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     try {
       final t = await _repo.trip(widget.tripId);
       if (mounted) setState(() => _trip = t);
+      // Trace the customer once they're being picked up.
+      if (_tripActive) {
+        final c = await _repo.customerLocation(widget.tripId);
+        if (mounted) setState(() => _custLoc = c);
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     }
@@ -105,61 +112,63 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     }
   }
 
+  /// Accept the auto fare as-is (no adjustment → company keeps 20%).
+  Future<void> _acceptAutoFare() => _run(() async {
+        await _repo.quote(widget.tripId);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Fare confirmed. Waiting for the customer to pay.')),
+          );
+        }
+      });
+
+  /// Adjust the fare up to +30% (no reason). Adjusting at all → company keeps 25%.
   Future<void> _adjustFare() async {
     final trip = _trip!;
     final baseFare = (trip['base_fare'] as num).toInt();
     final maxFare = (baseFare * 1.30).round();
-    final amountCtrl = TextEditingController(text: baseFare.toString());
-    String reason = AdjustmentReasons.all.first.value;
+    double value = baseFare.toDouble();
 
-    final result = await showDialog<bool>(
+    final proposed = await showDialog<int>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('Adjust Fare'),
+          title: const Text('Adjust fare'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Original: KES $baseFare  •  Max (+30%): KES $maxFare',
+              Text('Auto fare: KES $baseFare   •   Max (+30%): KES $maxFare',
                   style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                initialValue: reason,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Reason'),
-                items: AdjustmentReasons.all
-                    .map((r) => DropdownMenuItem(value: r.value, child: Text(r.label)))
-                    .toList(),
-                onChanged: (v) => setLocal(() => reason = v ?? reason),
+              const SizedBox(height: 16),
+              Text('KES ${value.round()}', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+              Slider(
+                value: value,
+                min: baseFare.toDouble(),
+                max: maxFare.toDouble(),
+                divisions: (maxFare - baseFare).clamp(1, 100),
+                label: 'KES ${value.round()}',
+                onChanged: (v) => setLocal(() => value = v),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: amountCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'New fare (KES)'),
-              ),
+              const Text('Adjusting raises the company commission to 25% (you keep 75%).',
+                  style: TextStyle(color: AppTheme.muted, fontSize: 12)),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Send')),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, value.round()), child: const Text('Confirm')),
           ],
         ),
       ),
     );
 
-    if (result != true) return;
-    final proposed = int.tryParse(amountCtrl.text) ?? baseFare;
+    if (proposed == null) return;
     await _run(() async {
-      final res = await _repo.adjustFare(widget.tripId, proposed, reason);
+      final res = await _repo.quote(widget.tripId, proposedFare: proposed);
       if (!mounted) return;
-      final approved = res['approved'] == true;
-      final capped = (res['cappedFare'] as num?)?.toInt() ?? proposed;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(approved
-            ? 'Sent KES $capped to customer for approval'
-            : 'Capped to KES $capped (+30% limit)'),
-      ));
+      final fare = (res['finalFare'] as num?)?.toInt() ?? proposed;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Fare set to KES $fare. Waiting for the customer to pay.')),
+      );
     });
   }
 
@@ -179,11 +188,14 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
   Widget _content(Map<String, dynamic> trip) {
     final status = trip['status'] as String;
     final fare = (trip['final_fare'] as num?)?.toInt() ?? (trip['base_fare'] as num).toInt();
+    final adjusted = trip['adjusted'] == true;
 
     final pLat = (trip['pickup_lat'] as num?)?.toDouble() ?? -1.2921;
     final pLng = (trip['pickup_lng'] as num?)?.toDouble() ?? 36.8219;
     final dLat = (trip['dropoff_lat'] as num?)?.toDouble() ?? pLat;
     final dLng = (trip['dropoff_lng'] as num?)?.toDouble() ?? pLng;
+    final custLat = (_custLoc?['customerLat'] as num?)?.toDouble();
+    final custLng = (_custLoc?['customerLng'] as num?)?.toDouble();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -199,6 +211,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
               markers: [
                 MapMarker(LatLng(pLat, pLng), color: AppTheme.primary, icon: Icons.my_location),
                 MapMarker(LatLng(dLat, dLng), color: AppTheme.green, icon: Icons.location_pin),
+                if (custLat != null && custLng != null)
+                  MapMarker(LatLng(custLat, custLng), color: AppTheme.red, icon: Icons.person_pin_circle),
               ],
             ),
           ),
@@ -211,6 +225,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Fare: KES $fare', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              Text('You keep ${adjusted ? '75%' : '80%'}  ·  KES ${(fare * (adjusted ? 0.75 : 0.80)).round()}',
+                  style: const TextStyle(color: AppTheme.green, fontSize: 13)),
               const SizedBox(height: 6),
               _line(Icons.my_location, trip['pickup_address'] as String? ?? 'Pickup'),
               _line(Icons.location_on, trip['dropoff_address'] as String? ?? 'Destination'),
@@ -244,10 +260,22 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
   List<Widget> _actions(String status) {
     switch (status) {
+      case 'quote_pending':
+        return [
+          const Text('Confirm the price to send to the customer', style: TextStyle(color: AppTheme.muted, fontSize: 13)),
+          const SizedBox(height: 10),
+          OutlinedButton(onPressed: _adjustFare, child: const Text('Adjust fare (up to +30%)')),
+          const SizedBox(height: 10),
+          FilledButton(onPressed: _acceptAutoFare, child: const Text('Accept fare')),
+        ];
+      case 'awaiting_payment':
+        return [
+          const Center(child: Text('Waiting for the customer to pay the 50% deposit…', style: TextStyle(color: AppTheme.muted))),
+          const SizedBox(height: 10),
+          OutlinedButton(onPressed: _refresh, child: const Text('Refresh')),
+        ];
       case 'rider_assigned':
         return [
-          OutlinedButton(onPressed: _adjustFare, child: const Text('Adjust Fare (reason required)')),
-          const SizedBox(height: 10),
           FilledButton(onPressed: () => _run(() => _repo.markArrived(widget.tripId)), child: const Text('I have arrived')),
         ];
       case 'arrived':
@@ -256,11 +284,17 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         ];
       case 'in_progress':
         return [
-          FilledButton(onPressed: () => _run(() => _repo.completeTrip(widget.tripId)), child: const Text('Complete Trip')),
+          FilledButton(onPressed: () => _run(() => _repo.completeTrip(widget.tripId)), child: const Text('Reached destination')),
+        ];
+      case 'awaiting_balance':
+        return [
+          const Center(child: Text('Waiting for the customer to pay the balance…', style: TextStyle(color: AppTheme.muted))),
+          const SizedBox(height: 10),
+          OutlinedButton(onPressed: _refresh, child: const Text('Refresh')),
         ];
       case 'completed':
         return [
-          const Center(child: Text('Trip completed. 80% credited to your wallet.', style: TextStyle(color: AppTheme.green))),
+          const Center(child: Text('Trip completed. Your share is credited to your wallet.', style: TextStyle(color: AppTheme.green))),
           const SizedBox(height: 10),
           FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Back to Home')),
         ];

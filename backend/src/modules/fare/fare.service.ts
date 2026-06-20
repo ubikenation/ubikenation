@@ -1,7 +1,7 @@
 import { env } from '../../config/env';
 import { supabaseAdmin } from '../../config/supabase';
 import { AppError, badRequest } from '../../utils/http';
-import type { AdjustmentReason, VehicleClass } from '../../types/domain';
+import type { VehicleClass } from '../../types/domain';
 
 export interface FareInputs {
   vehicleClass: VehicleClass;
@@ -82,7 +82,6 @@ export async function calculateFare(input: FareInputs): Promise<FareBreakdown> {
 export interface AdjustmentRequest {
   originalFare: number;
   proposedFare: number;
-  reason: AdjustmentReason;
 }
 
 export interface AdjustmentResult {
@@ -90,32 +89,16 @@ export interface AdjustmentResult {
   cappedFare: number;
   percentIncrease: number;
   maxAllowedFare: number;
-  reason: AdjustmentReason;
   message: string;
 }
 
-const VALID_REASONS = new Set<AdjustmentReason>([
-  'heavy_rain',
-  'flooding',
-  'road_closure',
-  'accident_ahead',
-  'traffic_congestion',
-  'diversion_route',
-  'security_alert',
-  'fuel_cost_surge',
-  'remote_pickup_area',
-  'public_event_congestion',
-]);
-
 /**
- * Validates a rider's fare adjustment: must use an approved reason and stay within +30%.
- * (Automated cross-checks against Google traffic / weather are layered on top in
- * validation.service — this enforces the hard business cap.)
+ * Validates a rider's fare adjustment: it must not exceed +30% of the system fare.
+ * No reason is required (the owner simplified this) — the rider may nudge the auto
+ * fare up to the cap. Adjusting at all costs the rider a higher commission, handled
+ * by the caller via {@link COMMISSION_ADJUSTED}.
  */
 export function validateAdjustment(req: AdjustmentRequest): AdjustmentResult {
-  if (!VALID_REASONS.has(req.reason)) {
-    throw badRequest('Adjustment reason must be one of the approved reasons');
-  }
   const maxAllowedFare = roundTo(req.originalFare * (1 + env.MAX_RIDER_PRICE_ADJUSTMENT), 1);
   const percentIncrease = (req.proposedFare - req.originalFare) / req.originalFare;
 
@@ -129,7 +112,6 @@ export function validateAdjustment(req: AdjustmentRequest): AdjustmentResult {
     cappedFare: approved ? req.proposedFare : maxAllowedFare,
     percentIncrease: roundTo(percentIncrease, 4),
     maxAllowedFare,
-    reason: req.reason,
     message: approved
       ? 'Adjustment within allowed range'
       : `Adjustment exceeds the ${Math.round(env.MAX_RIDER_PRICE_ADJUSTMENT * 100)}% cap; fare capped`,

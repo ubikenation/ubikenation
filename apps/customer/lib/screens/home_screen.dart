@@ -8,6 +8,7 @@ import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
 import 'booking_screen.dart';
+import 'commuter_plans_screen.dart';
 import 'menu_screens.dart';
 
 /// Bolt-style home: a full-screen map with a floating bottom sheet to pick a
@@ -217,6 +218,14 @@ class _Menu extends StatelessWidget {
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).push(MaterialPageRoute(builder: (_) => const WalletScreen()));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.repeat),
+              title: const Text('Commuter Plans'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CommuterPlansScreen()));
               },
             ),
             ListTile(

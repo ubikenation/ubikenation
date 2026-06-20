@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
@@ -9,9 +10,14 @@ import '../models/models.dart';
 import '../services/trip_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
+import 'chat_screen.dart';
+import 'paystack_webview.dart';
 
-/// Polls the trip status and, once a rider is assigned, shows the rider moving
-/// toward you on a live map with distance + ETA — Bolt/Uber style.
+/// Drives the whole Uber/Bolt-style trip:
+///   finding a rider (just a loading state — the customer never sees the rider
+///   accept/quote happening) → pay 50% once the price is set → live two-way map
+///   tracking with the rider's profile + car + plate, chat & call → arrived →
+///   in progress → pay the balance on arrival → rate.
 class TripScreen extends StatefulWidget {
   const TripScreen({super.key, required this.trip});
   final Trip trip;
@@ -23,7 +29,9 @@ class TripScreen extends StatefulWidget {
 class _TripScreenState extends State<TripScreen> {
   late Trip _trip;
   Timer? _poll;
+  Timer? _locPush;
   int _rating = 5;
+  bool _busy = false;
   Map<String, dynamic>? _riderLoc;
 
   static const _trackStatuses = {'rider_assigned', 'arrived', 'in_progress'};
@@ -34,11 +42,14 @@ class _TripScreenState extends State<TripScreen> {
     _trip = widget.trip;
     _refresh();
     _poll = Timer.periodic(const Duration(seconds: 4), (_) => _refresh());
+    // Share our live location so the rider can trace us to the pickup.
+    _locPush = Timer.periodic(const Duration(seconds: 8), (_) => _pushMyLocation());
   }
 
   @override
   void dispose() {
     _poll?.cancel();
+    _locPush?.cancel();
     super.dispose();
   }
 
@@ -57,9 +68,98 @@ class _TripScreenState extends State<TripScreen> {
     }
   }
 
-  Future<void> _cancel() async {
-    await context.read<TripRepository>().cancelTrip(_trip.id, reason: 'customer_cancel');
-    await _refresh();
+  Future<void> _pushMyLocation() async {
+    if (!_trackStatuses.contains(_trip.status)) return;
+    final repo = context.read<TripRepository>();
+    try {
+      final pos = await Geolocator.getCurrentPosition();
+      await repo.pushLocation(_trip.id, pos.latitude, pos.longitude);
+    } catch (_) {/* ignore */}
+  }
+
+  // ---- payments ----
+  Future<void> _payUpfront() async => _pay(isBalance: false);
+  Future<void> _payBalance() async => _pay(isBalance: true);
+
+  Future<void> _pay({required bool isBalance}) async {
+    setState(() => _busy = true);
+    final repo = context.read<TripRepository>();
+    try {
+      final amount = isBalance ? _trip.balance : _trip.upfront;
+      final checkout = isBalance ? await repo.initiateBalance(_trip.id, amount) : await repo.initiateUpfront(_trip.id, amount);
+      if (!mounted) return;
+      final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(
+        builder: (_) => PaystackWebView(url: checkout.url, callbackUrl: TripRepository.paystackCallbackUrl),
+      ));
+      if (paid == true) {
+        await repo.verifyPayment(checkout.reference);
+      }
+      await _refresh();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Payment failed: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // ---- rider / cancellation ----
+  Future<void> _findAnotherRider() async {
+    final repo = context.read<TripRepository>();
+    setState(() => _busy = true);
+    try {
+      await repo.requery(_trip.id);
+      await _refresh();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  static const _cancelReasons = [
+    'Rider isn\'t moving',
+    'Waiting too long',
+    'Wrong pickup location',
+    'Booked by mistake',
+    'Found another way',
+    'Rider asked to cancel',
+    'Other',
+  ];
+
+  Future<void> _cancelFlow() async {
+    final repo = context.read<TripRepository>();
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Why are you cancelling?', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            ..._cancelReasons.map((r) => ListTile(
+                  title: Text(r),
+                  trailing: const Icon(Icons.chevron_right, color: AppTheme.muted),
+                  onTap: () => Navigator.pop(ctx, r),
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (reason == null) return;
+    setState(() => _busy = true);
+    try {
+      await repo.cancelTrip(_trip.id, reason: reason);
+      await _refresh();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not cancel: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _submitRating() async {
@@ -78,7 +178,7 @@ class _TripScreenState extends State<TripScreen> {
     );
   }
 
-  // -------- Live tracking --------
+  // -------- Live tracking (rider en route / arrived / in progress) --------
   Widget _trackingView() {
     final loc = _riderLoc!;
     final riderLat = (loc['riderLat'] as num?)?.toDouble();
@@ -89,7 +189,6 @@ class _TripScreenState extends State<TripScreen> {
     final dropLng = (loc['dropoffLng'] as num?)?.toDouble();
     final inProgress = _trip.status == 'in_progress';
 
-    // Target the rider is heading to, for distance/ETA.
     final targetLat = inProgress ? (dropLat ?? pickupLat) : pickupLat;
     final targetLng = inProgress ? (dropLng ?? pickupLng) : pickupLng;
 
@@ -107,19 +206,10 @@ class _TripScreenState extends State<TripScreen> {
         ? LatLng((riderLat + targetLat) / 2, (riderLng + targetLng) / 2)
         : LatLng(pickupLat, pickupLng);
 
-    final name = loc['riderName'] as String? ?? 'Your rider';
-    final rating = (loc['rating'] as num?)?.toDouble() ?? 5.0;
-    final photo = loc['riderPhoto'] as String?;
-
     return Column(
       children: [
         Expanded(
-          child: AppMap(
-            center: center,
-            zoom: 13.5,
-            myLocation: LatLng(pickupLat, pickupLng),
-            markers: markers,
-          ),
+          child: AppMap(center: center, zoom: 13.5, myLocation: LatLng(pickupLat, pickupLng), markers: markers),
         ),
         Container(
           width: double.infinity,
@@ -143,41 +233,39 @@ class _TripScreenState extends State<TripScreen> {
               ),
               const SizedBox(height: 4),
               if (km != null)
-                Text('${km.toStringAsFixed(1)} km away  ·  ~$etaMin min',
-                    style: const TextStyle(color: AppTheme.muted))
+                Text('${km.toStringAsFixed(1)} km away  ·  ~$etaMin min', style: const TextStyle(color: AppTheme.muted))
               else
                 const Text('Locating your rider…', style: TextStyle(color: AppTheme.muted)),
               const SizedBox(height: 14),
+              _riderCard(loc),
+              const SizedBox(height: 12),
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundColor: AppTheme.surface,
-                    backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
-                    child: (photo == null || photo.isEmpty) ? const Icon(Icons.person, color: AppTheme.primary) : null,
-                  ),
-                  const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(name, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.ink)),
-                        Row(children: [
-                          const Icon(Icons.star, size: 14, color: Colors.amber),
-                          const SizedBox(width: 3),
-                          Text(rating.toStringAsFixed(1), style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
-                        ]),
-                      ],
+                    child: OutlinedButton.icon(
+                      onPressed: _openChat,
+                      icon: const Icon(Icons.chat_bubble_outline),
+                      label: const Text('Chat'),
                     ),
                   ),
-                  Text('KES ${_trip.fare}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.ink)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _placeCall(loc['riderName'] as String? ?? 'your rider'),
+                      icon: const Icon(Icons.call),
+                      label: const Text('Call'),
+                    ),
+                  ),
                 ],
               ),
               if (_trip.status != 'in_progress') ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
-                  child: OutlinedButton(onPressed: _cancel, child: const Text('Cancel (full refund before start)')),
+                  child: TextButton(
+                    onPressed: _busy ? null : _cancelFlow,
+                    child: const Text('Cancel ride'),
+                  ),
                 ),
               ],
             ],
@@ -187,28 +275,178 @@ class _TripScreenState extends State<TripScreen> {
     );
   }
 
+  /// Rider identity card: photo, name, rating, and the car make/model/colour +
+  /// plate so the customer recognises who's coming (Bolt-style).
+  Widget _riderCard(Map<String, dynamic> loc) {
+    final name = loc['riderName'] as String? ?? 'Your rider';
+    final rating = (loc['rating'] as num?)?.toDouble() ?? 5.0;
+    final photo = loc['riderPhoto'] as String?;
+    final make = loc['vehicleMake'] as String?;
+    final model = loc['vehicleModel'] as String?;
+    final color = loc['vehicleColor'] as String?;
+    final plate = loc['plateNumber'] as String?;
+    final carParts = [color, make, model].where((s) => s != null && s.isNotEmpty).join(' ');
+
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 24,
+          backgroundColor: AppTheme.surface,
+          backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
+          child: (photo == null || photo.isEmpty) ? const Icon(Icons.person, color: AppTheme.primary) : null,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.ink)),
+              Row(children: [
+                const Icon(Icons.star, size: 14, color: Colors.amber),
+                const SizedBox(width: 3),
+                Text(rating.toStringAsFixed(1), style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
+              ]),
+              if (carParts.isNotEmpty)
+                Text(carParts, style: const TextStyle(color: AppTheme.muted, fontSize: 12)),
+            ],
+          ),
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (plate != null && plate.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppTheme.ink,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(plate, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
+              ),
+            const SizedBox(height: 4),
+            Text('KES ${_trip.fare}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.ink)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _openChat() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(tripId: _trip.id)));
+  }
+
+  void _placeCall(String name) {
+    // Voice calling is wired to the trip but the audio channel is a placeholder
+    // for now (ZEGO/WebRTC integration is a later pass).
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Calling $name…'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(radius: 30, backgroundColor: AppTheme.surface, child: Icon(Icons.call, color: AppTheme.primary, size: 28)),
+            SizedBox(height: 14),
+            Text('In-app voice calling is coming soon. Please use chat in the meantime.', textAlign: TextAlign.center),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('End')),
+        ],
+      ),
+    );
+  }
+
   // -------- Non-tracking states --------
   Widget _body() {
     switch (_trip.status) {
-      case 'pending_payment':
-        return _statusBlock(Icons.lock_clock, 'Confirming your payment…');
+      case 'scheduled':
+        return _statusBlock(Icons.schedule, 'Ride scheduled. We\'ll match you a rider at the set time.');
       case 'searching':
-        return _statusBlock(Icons.search, 'Finding you the closest rider…', showCancel: true);
+      case 'quote_pending':
+        return _findingBlock();
+      case 'awaiting_payment':
+        return _payBlock(
+          title: 'Rider found!',
+          subtitle: 'Pay 50% now to confirm. The other half is paid when you reach your destination.',
+          amount: _trip.upfront,
+          onPay: _payUpfront,
+        );
       case 'rider_assigned':
       case 'arrived':
-        return _statusBlock(Icons.directions_bike, 'Rider assigned — loading live map…', showCancel: true);
+        return _statusBlock(Icons.directions_bike, 'Rider assigned — loading live map…');
       case 'in_progress':
         return _statusBlock(Icons.navigation, 'Trip in progress — enjoy the ride');
+      case 'awaiting_balance':
+        return _payBlock(
+          title: 'You\'ve arrived',
+          subtitle: 'Pay the remaining balance to finish your trip.',
+          amount: _trip.balance,
+          onPay: _payBalance,
+        );
       case 'completed':
         return _ratingBlock();
       case 'cancelled':
-        return _statusBlock(Icons.cancel, 'Trip cancelled. Refund issued to your wallet.');
+        return _statusBlock(Icons.cancel, 'Trip cancelled. Any payment is refunded to your wallet.');
       default:
         return _statusBlock(Icons.info, 'Status: ${_trip.status}');
     }
   }
 
-  Widget _statusBlock(IconData icon, String text, {bool showCancel = false}) {
+  /// Plain "finding a rider" loading — deliberately neutral; the customer should
+  /// not see the rider accepting/quoting, it should just feel like normal loading.
+  Widget _findingBlock() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const CircularProgressIndicator(color: AppTheme.primary),
+        const SizedBox(height: 24),
+        const Text('Finding you the closest rider…',
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 18, color: AppTheme.ink)),
+        const SizedBox(height: 8),
+        const Text('Hang tight, this only takes a moment.', style: TextStyle(color: AppTheme.muted)),
+        const Spacer(),
+        TextButton(
+          onPressed: _busy ? null : _findAnotherRider,
+          child: const Text('Taking too long? Find another rider'),
+        ),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(onPressed: _busy ? null : _cancelFlow, child: const Text('Cancel')),
+        ),
+      ],
+    );
+  }
+
+  Widget _payBlock({required String title, required String subtitle, required int amount, required VoidCallback onPay}) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Icon(Icons.account_balance_wallet, size: 60, color: AppTheme.primary),
+        const SizedBox(height: 16),
+        Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Text(subtitle, textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.muted)),
+        const SizedBox(height: 18),
+        Text('KES $amount', style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppTheme.ink)),
+        Text('Total fare: KES ${_trip.fare}', style: const TextStyle(color: AppTheme.muted)),
+        const Spacer(),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: _busy ? null : onPay,
+            child: _busy
+                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : Text('Pay KES $amount'),
+          ),
+        ),
+        if (title == 'Rider found!')
+          TextButton(onPressed: _busy ? null : _cancelFlow, child: const Text('Cancel')),
+      ],
+    );
+  }
+
+  Widget _statusBlock(IconData icon, String text) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -217,9 +455,6 @@ class _TripScreenState extends State<TripScreen> {
         Text(text, textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, color: AppTheme.ink)),
         const SizedBox(height: 8),
         Text('Fare: KES ${_trip.fare}', style: const TextStyle(color: AppTheme.muted)),
-        const Spacer(),
-        if (showCancel)
-          OutlinedButton(onPressed: _cancel, child: const Text('Cancel (full refund before start)')),
       ],
     );
   }
@@ -231,7 +466,7 @@ class _TripScreenState extends State<TripScreen> {
         const Icon(Icons.check_circle, size: 64, color: AppTheme.accent),
         const SizedBox(height: 12),
         const Text('Trip completed', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-        Text('Balance due: KES ${_trip.balance}', style: const TextStyle(color: AppTheme.muted)),
+        Text('Paid in full: KES ${_trip.fare}', style: const TextStyle(color: AppTheme.muted)),
         const SizedBox(height: 20),
         const Text('Rate your rider'),
         Row(

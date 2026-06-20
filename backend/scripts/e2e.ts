@@ -83,8 +83,8 @@ async function main() {
   const fare = await C.post('/api/fare/estimate', { vehicleClass: 'economy', distanceKm: 5, durationMin: 15 });
   ok('POST /api/fare/estimate', fare.status === 200 && fare.data.data.fare >= 300, `fare=${fare.data?.data?.fare}`);
 
-  // 4) rider adjustment validation
-  const adj = await R.post('/api/fare/validate-adjustment', { originalFare: 300, proposedFare: 500, reason: 'heavy_rain' });
+  // 4) rider adjustment validation (no reason required now)
+  const adj = await R.post('/api/fare/validate-adjustment', { originalFare: 300, proposedFare: 500 });
   ok('Adjustment caps at +30%', adj.status === 200 && adj.data.data.cappedFare === 390, `capped=${adj.data?.data?.cappedFare}`);
 
   // 5) registration fee quote (founding aware)
@@ -115,7 +115,23 @@ async function main() {
   const loc = await R.post('/api/riders/location', { lat: -1.292, lng: 36.821 });
   ok('POST /api/riders/location', loc.status === 200);
 
-  // 10) customer creates trip
+  // Helper: simulate a customer paying (no live Paystack charge) by funding escrow
+  // and advancing the trip status exactly like the payment webhook would.
+  async function fundUpfront(id: string) {
+    const { data: t } = await supabaseAdmin.from('trips').select('upfront_amount').eq('id', id).single();
+    await supabaseAdmin.from('escrow').upsert(
+      { trip_id: id, amount: t!.upfront_amount, status: 'held', held_at: new Date().toISOString() },
+      { onConflict: 'trip_id' });
+    await supabaseAdmin.from('trips').update({ status: 'rider_assigned' }).eq('id', id);
+  }
+  async function fundBalance(id: string) {
+    const { data: t } = await supabaseAdmin.from('trips').select('final_fare').eq('id', id).single();
+    await supabaseAdmin.from('escrow').upsert(
+      { trip_id: id, amount: t!.final_fare, status: 'held', held_at: new Date().toISOString() },
+      { onConflict: 'trip_id' });
+  }
+
+  // 10) customer requests a ride → goes straight to matching (searching), NO payment yet
   const trip = await C.post('/api/trips', {
     tripType: 'bike', vehicleClass: 'standard_bike',
     pickup: { lat: -1.2921, lng: 36.8219, address: 'CBD' },
@@ -123,40 +139,52 @@ async function main() {
     distanceKm: 6, durationMin: 18,
   });
   const tripId = trip.data?.data?.tripId as string;
-  ok('POST /api/trips (create)', trip.status === 201 && !!tripId, `fare=${trip.data?.data?.fare} upfront=${trip.data?.data?.upfront}`);
+  ok('POST /api/trips (create → searching, no upfront)',
+    trip.status === 201 && !!tripId && trip.data.data.status === 'searching',
+    `status=${trip.data?.data?.status} fare=${trip.data?.data?.fare}`);
 
-  // 11) simulate upfront settled → searching (skip live Paystack charge)
-  await supabaseAdmin.from('trips').update({ status: 'searching' }).eq('id', tripId);
-
-  // 12) rider sees available trip
+  // 11) rider sees available trip (within 5km, randomised)
   const avail = await R.get('/api/trips/available');
   const sees = Array.isArray(avail.data.data) && avail.data.data.some((t: { id: string }) => t.id === tripId);
   ok('GET /api/trips/available shows the trip', avail.status === 200 && sees);
 
-  // 13) rider accepts
+  // 12) rider accepts → quote_pending (customer still just sees "finding…")
   const acc = await R.post(`/api/trips/${tripId}/accept`);
-  ok('POST /api/trips/:id/accept', acc.status === 200 && acc.data.data.status === 'rider_assigned', errMsg(acc.data));
+  ok('POST /api/trips/:id/accept → quote_pending', acc.status === 200 && acc.data.data.status === 'quote_pending', errMsg(acc.data));
 
-  // 13b) customer can fetch the assigned rider's live location (tracking)
+  // 13) rider accepts the AUTO fare (no adjust) → awaiting_payment, 20% commission
+  const quote = await R.post(`/api/trips/${tripId}/quote`, {});
+  ok('POST /api/trips/:id/quote (auto, no adjust)', quote.status === 200 && quote.data.data.adjusted === false,
+    `final=${quote.data?.data?.finalFare} upfront=${quote.data?.data?.upfront}`);
+
+  // 13b) customer fetches rider + vehicle identity for tracking
   const rloc = await C.get(`/api/trips/${tripId}/rider-location`);
-  ok('GET /api/trips/:id/rider-location', rloc.status === 200 && rloc.data.data.hasRider === true && rloc.data.data.riderLat != null,
-    `rider@${rloc.data?.data?.riderLat},${rloc.data?.data?.riderLng}`);
+  ok('GET /api/trips/:id/rider-location (rider + car)',
+    rloc.status === 200 && rloc.data.data.hasRider === true && rloc.data.data.riderLat != null,
+    `rider@${rloc.data?.data?.riderLat},${rloc.data?.data?.riderLng} plate=${rloc.data?.data?.plateNumber}`);
 
-  // 14) rider adjusts fare, customer accepts
-  const radj = await R.post(`/api/trips/${tripId}/adjust`, { proposedFare: 250, reason: 'traffic_congestion' });
-  ok('POST /api/trips/:id/adjust', radj.status === 200, `capped=${radj.data?.data?.cappedFare}`);
-  const cresp = await C.post(`/api/trips/${tripId}/adjust-response`, { accept: true });
-  ok('Customer accepts adjustment', cresp.status === 200 && cresp.data.data.accepted === true);
+  // 14) customer pays 50% (simulated) → rider_assigned; push live location; rider traces it
+  await fundUpfront(tripId);
+  const cpush = await C.post(`/api/trips/${tripId}/customer-location`, { lat: -1.2925, lng: 36.8225 });
+  ok('POST /api/trips/:id/customer-location', cpush.status === 200);
+  const cloc = await R.get(`/api/trips/${tripId}/customer-location`);
+  ok('GET /api/trips/:id/customer-location (rider traces customer)',
+    cloc.status === 200 && cloc.data.data.customerLat != null);
 
-  // 15) lifecycle: arrived → start → complete
+  // 15) lifecycle: arrived → start → complete-without-balance → pay balance → completed (20/80)
   const arr = await R.post(`/api/trips/${tripId}/arrived`);
   ok('POST /api/trips/:id/arrived', arr.status === 200);
   const st = await R.post(`/api/trips/${tripId}/start`);
   ok('POST /api/trips/:id/start', st.status === 200 && st.data.data.status === 'in_progress');
+  const compEarly = await R.post(`/api/trips/${tripId}/complete`);
+  ok('Complete before balance → awaiting_balance', compEarly.status === 200 && compEarly.data.data.status === 'awaiting_balance', errMsg(compEarly.data));
+  await fundBalance(tripId);
   const comp = await R.post(`/api/trips/${tripId}/complete`);
   const split = comp.data?.data?.split;
-  ok('POST /api/trips/:id/complete (escrow release + 20/80)', comp.status === 200 && !!split,
-    split ? `company=${split.companyAmount} rider=${split.riderAmount}` : errMsg(comp.data));
+  const { data: fareRow } = await supabaseAdmin.from('trips').select('final_fare').eq('id', tripId).single();
+  const expected20 = Math.round((fareRow!.final_fare as number) * 0.2);
+  ok('Complete (escrow release, 20% no-adjust)', comp.status === 200 && !!split && split.companyAmount === expected20,
+    split ? `company=${split.companyAmount} (exp ${expected20}) rider=${split.riderAmount}` : errMsg(comp.data));
 
   // 16) rider wallet credited
   const wallet = await R.get('/api/payments/wallet');
@@ -218,6 +246,70 @@ async function main() {
   // 26) admin reject path (suspend a fresh rider would change state) — toggle founding instead (non-destructive)
   const fToggle = await A.patch('/api/admin/founding', { enabled: true });
   ok('PATCH /api/admin/founding', fToggle.status === 200);
+
+  // 27) ADJUSTED trip → 25% commission (rider nudges the fare up)
+  const trip2 = await C.post('/api/trips', {
+    tripType: 'bike', vehicleClass: 'standard_bike',
+    pickup: { lat: -1.2921, lng: 36.8219, address: 'CBD' },
+    dropoff: { lat: -1.31, lng: 36.77, address: 'Far' },
+    distanceKm: 8, durationMin: 25,
+  });
+  const tripId2 = trip2.data?.data?.tripId as string;
+  await R.post(`/api/trips/${tripId2}/accept`);
+  const baseFare2 = trip2.data?.data?.fare as number;
+  const q2 = await R.post(`/api/trips/${tripId2}/quote`, { proposedFare: Math.round(baseFare2 * 1.2) });
+  ok('Quote with adjustment → adjusted=true', q2.status === 200 && q2.data.data.adjusted === true, `final=${q2.data?.data?.finalFare}`);
+  const { data: t2row } = await supabaseAdmin.from('trips').select('commission_rate, final_fare').eq('id', tripId2).single();
+  ok('Adjusted trip sets 25% commission_rate', Number(t2row!.commission_rate) === 0.25, `rate=${t2row?.commission_rate}`);
+  await fundUpfront(tripId2);
+  await R.post(`/api/trips/${tripId2}/arrived`);
+  await R.post(`/api/trips/${tripId2}/start`);
+  await fundBalance(tripId2);
+  const comp2 = await R.post(`/api/trips/${tripId2}/complete`);
+  const split2 = comp2.data?.data?.split;
+  const expected25 = Math.round((t2row!.final_fare as number) * 0.25);
+  ok('Complete (escrow release, 25% adjusted)', comp2.status === 200 && !!split2 && split2.companyAmount === expected25,
+    split2 ? `company=${split2.companyAmount} (exp ${expected25})` : errMsg(comp2.data));
+
+  // 28) REQUERY: customer passes on a rider → re-search excludes that rider
+  const trip3 = await C.post('/api/trips', {
+    tripType: 'bike', vehicleClass: 'standard_bike',
+    pickup: { lat: -1.2921, lng: 36.8219, address: 'CBD' },
+    dropoff: { lat: -1.30, lng: 36.79, address: 'Near' },
+    distanceKm: 4, durationMin: 12,
+  });
+  const tripId3 = trip3.data?.data?.tripId as string;
+  await R.post(`/api/trips/${tripId3}/accept`);
+  const rq = await C.post(`/api/trips/${tripId3}/requery`);
+  ok('POST /api/trips/:id/requery → searching', rq.status === 200 && rq.data.data.status === 'searching');
+  const avail3 = await R.get('/api/trips/available');
+  const excluded = !avail3.data.data.some((t: { id: string }) => t.id === tripId3);
+  ok('Re-search excludes the passed-on rider', avail3.status === 200 && excluded);
+
+  // 29) COMMUTER PLAN (recurring errand) — auto-priced
+  const plan = await C.post('/api/plans', {
+    errandType: 'grocery_shopping',
+    description: '2kg sugar\n1 loaf bread\n1L milk',
+    pickup: { lat: -1.2921, lng: 36.8219, address: 'Home' },
+    dropoff: { lat: -1.30, lng: 36.79, address: 'Market' },
+    distanceKm: 3, durationMin: 10,
+    frequency: 'weekdays', timeOfDay: '08:00',
+  });
+  ok('POST /api/plans (commuter plan, auto fare)', plan.status === 201 && plan.data.data.fare_estimate > 0,
+    `est=${plan.data?.data?.fare_estimate} next=${plan.data?.data?.next_run_at}`);
+  const planList = await C.get('/api/plans/mine');
+  ok('GET /api/plans/mine', planList.status === 200 && Array.isArray(planList.data.data) && planList.data.data.length > 0);
+
+  // 30) SCHEDULED trip — parked until due
+  const future = new Date(Date.now() + 3 * 3600_000).toISOString();
+  const sched = await C.post('/api/trips/schedule', {
+    tripType: 'bike', vehicleClass: 'standard_bike',
+    pickup: { lat: -1.2921, lng: 36.8219, address: 'CBD' },
+    dropoff: { lat: -1.30, lng: 36.78, address: 'Westlands' },
+    distanceKm: 6, durationMin: 18, scheduledFor: future,
+  });
+  ok('POST /api/trips/schedule → scheduled', sched.status === 201 && sched.data.data.status === 'scheduled',
+    `status=${sched.data?.data?.status}`);
 
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   process.exit(fail === 0 ? 0 : 1);

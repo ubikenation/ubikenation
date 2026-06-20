@@ -2,7 +2,26 @@
 const String kUBikeTerms = '''
 U-BIKE TERMS AND CONDITIONS OF USE & PRIVACY POLICY
 
-Last updated: 18 June 2026
+Last updated: 21 June 2026
+
+BEFORE YOU REGISTER — RIDER REQUIREMENTS (PLEASE READ FIRST)
+
+To ride with U-Bike as a bike rider, you must have:
+• A helmet
+• A valid riding licence
+• Proof of legal ownership of the motorcycle
+• A roadworthy motorcycle with all its lights working
+• No fancy (modified/noisy) exhaust
+• A reflector
+• A number plate
+
+Additionally, every rider will be required to visit our office for a physical inspection of their vehicle before approval.
+
+Please note that the registration fee is non-refundable if the motorcycle or vehicle fails to meet the required standards and inspection criteria.
+
+However, if the motorcycle or vehicle successfully passes the inspection and meets all the requirements, the rider will be granted access to their account immediately.
+
+----------------------------------------
 
 These Terms and Conditions of Use ("Terms") form a legally binding agreement between you ("you", "your", "User") and U-Bike ("U-Bike", "we", "us", "our"), governing your access to and use of the U-Bike mobile applications, websites, and related services (together, the "Platform"). By creating an account, ticking the acceptance box, or otherwise accessing or using the Platform, you confirm that you have read, understood and agree to be bound by these Terms and the Privacy Policy below. If you do not agree, you must not use the Platform.
 
@@ -34,9 +53,8 @@ These Terms and Conditions of Use ("Terms") form a legally binding agreement bet
 5. FARES, ESTIMATES AND ADJUSTMENTS
 5.1 Fares are calculated by the Platform based on factors that may include distance, estimated time, traffic and weather conditions, vehicle type, demand levels, pickup difficulty, road conditions and, for errands, the items and tasks you list. The fare calculation methodology is proprietary.
 5.2 Fare estimates shown before a Trip are indicative. The final Fare may differ based on the actual route, conditions and time.
-5.3 A Rider may propose an adjustment to the Fare of up to a maximum of thirty percent (30%) above the system Fare, and only for an approved reason (such as heavy rain, flooding, road closure, accident ahead, traffic congestion, diversion route, security alert, fuel cost surge, remote pickup area or public event congestion). Riders cannot enter custom reasons.
-5.4 Proposed adjustments are validated against traffic, route, weather and fraud-detection signals. The Customer may accept or decline a proposed adjustment. If declined, the Platform will search for another Rider.
-5.5 Submitting false or unjustified adjustment reasons is a violation and may result in penalties up to and including permanent removal from the Platform.
+5.3 A Rider may adjust the Fare by up to a maximum of thirty percent (30%) above the system Fare. No reason is required. A Rider cannot adjust the Fare beyond this cap, nor below the system Fare.
+5.4 The price shown to the Customer before payment already reflects any adjustment. The Customer confirms the Fare by paying the upfront amount, or may decline, in which case the Platform will look for another Rider.
 
 6. CANCELLATIONS AND REFUNDS
 6.1 A Customer may cancel a Trip before the Rider starts it and receive a full (100%) refund of the upfront amount to their Wallet.
@@ -44,7 +62,7 @@ These Terms and Conditions of Use ("Terms") form a legally binding agreement bet
 6.3 Refunds are made to your Wallet and may be used for future Trips. Withdrawal of Wallet funds, where offered, is subject to verification.
 
 7. COMMISSION AND RIDER PAYOUTS
-7.1 For every completed Trip or errand, U-Bike retains a commission of twenty percent (20%) of the Fare, and the Rider receives eighty percent (80%).
+7.1 For every completed Trip or errand, U-Bike retains a commission of twenty percent (20%) of the Fare, and the Rider receives eighty percent (80%). Where the Rider adjusts the Fare, U-Bike retains twenty-five percent (25%) and the Rider receives seventy-five percent (75%).
 7.2 Rider earnings are settled to the Rider's verified M-Pesa number, typically within twenty-four (24) to forty-eight (48) hours of Trip completion, subject to successful processing.
 7.3 Registration fees (where applicable) and the Founding Riders programme are governed by the terms made available in the Rider application at the time of registration.
 

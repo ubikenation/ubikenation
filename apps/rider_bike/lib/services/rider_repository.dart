@@ -65,9 +65,16 @@ class RiderRepository {
 
   Future<void> accept(String tripId) => _api.post('/api/trips/$tripId/accept');
 
-  Future<Map<String, dynamic>> adjustFare(String tripId, int proposedFare, String reason) async =>
-      await _api.post('/api/trips/$tripId/adjust', {'proposedFare': proposedFare, 'reason': reason})
+  /// Confirms the price after accepting: pass no [proposedFare] to take the auto
+  /// fare (company keeps 20%), or a higher one to adjust up to +30% (company keeps 25%).
+  Future<Map<String, dynamic>> quote(String tripId, {int? proposedFare}) async =>
+      await _api.post('/api/trips/$tripId/quote',
+              proposedFare != null ? {'proposedFare': proposedFare} : <String, dynamic>{})
           as Map<String, dynamic>;
+
+  /// The customer's live location + pickup/destination, to trace them on the map.
+  Future<Map<String, dynamic>> customerLocation(String tripId) async =>
+      await _api.get('/api/trips/$tripId/customer-location') as Map<String, dynamic>;
 
   Future<void> markArrived(String tripId) => _api.post('/api/trips/$tripId/arrived');
   Future<void> startTrip(String tripId) => _api.post('/api/trips/$tripId/start');

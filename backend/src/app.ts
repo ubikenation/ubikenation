@@ -10,6 +10,7 @@ import { fareRouter } from './modules/fare/fare.routes';
 import { ridersRouter } from './modules/riders/riders.routes';
 import { paymentsRouter } from './modules/payments/payments.routes';
 import { tripsRouter } from './modules/trips/trips.routes';
+import { plansRouter } from './modules/plans/plans.routes';
 import { chatRouter } from './modules/chat/chat.routes';
 import { adminRouter } from './modules/admin/admin.routes';
 
@@ -74,6 +75,7 @@ export function createApp() {
   app.use('/api/payments', paymentsRouter);
   app.use('/api/trips', tripsRouter);
   app.use('/api/trips', chatRouter);
+  app.use('/api/plans', plansRouter);
   app.use('/api/admin', adminRouter);
 
   app.use(notFoundHandler);

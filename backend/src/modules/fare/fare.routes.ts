@@ -52,13 +52,9 @@ fareRouter.post(
 const adjustSchema = z.object({
   originalFare: z.number().positive(),
   proposedFare: z.number().positive(),
-  reason: z.enum([
-    'heavy_rain', 'flooding', 'road_closure', 'accident_ahead', 'traffic_congestion',
-    'diversion_route', 'security_alert', 'fuel_cost_surge', 'remote_pickup_area', 'public_event_congestion',
-  ]),
 });
 
-// POST /api/fare/validate-adjustment — rider proposes a new fare (<= +30%).
+// POST /api/fare/validate-adjustment — rider proposes a new fare (<= +30%, no reason).
 fareRouter.post(
   '/validate-adjustment',
   requireAuth,
