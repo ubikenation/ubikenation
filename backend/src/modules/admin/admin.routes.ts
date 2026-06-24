@@ -6,6 +6,7 @@ import {
   approveRider, getDashboardStats, getFoundingProgram, getRiderDocuments, listPayouts,
   listRiders, listTrips, rejectRider, setFoundingProgram,
 } from './admin.service';
+import { markPayoutPaid, processPayout } from '../payments/payouts.service';
 
 export const adminRouter = Router();
 
@@ -46,4 +47,14 @@ adminRouter.get('/trips', handler(async (_req, res) => ok(res, await listTrips()
 adminRouter.get('/payouts', handler(async (req, res) => {
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
   ok(res, await listPayouts(status));
+}));
+
+// POST /api/admin/payouts/:id/process — send a pending payout via Paystack Transfer (real money).
+adminRouter.post('/payouts/:id/process', handler(async (req, res) => {
+  ok(res, await processPayout(req.params.id));
+}));
+
+// POST /api/admin/payouts/:id/mark-paid — record a payout settled out-of-band.
+adminRouter.post('/payouts/:id/mark-paid', handler(async (req, res) => {
+  ok(res, await markPayoutPaid(req.params.id));
 }));

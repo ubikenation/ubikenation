@@ -196,6 +196,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     final dLng = (trip['dropoff_lng'] as num?)?.toDouble() ?? pLng;
     final custLat = (_custLoc?['customerLat'] as num?)?.toDouble();
     final custLng = (_custLoc?['customerLng'] as num?)?.toDouble();
+    final custName = _custLoc?['customerName'] as String?;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -227,6 +228,10 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
               Text('Fare: KES $fare', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
               Text('You keep ${adjusted ? '75%' : '80%'}  ·  KES ${(fare * (adjusted ? 0.75 : 0.80)).round()}',
                   style: const TextStyle(color: AppTheme.green, fontSize: 13)),
+              if (custName != null && _tripActive) ...[
+                const SizedBox(height: 6),
+                _line(Icons.person, 'Customer: $custName'),
+              ],
               const SizedBox(height: 6),
               _line(Icons.my_location, trip['pickup_address'] as String? ?? 'Pickup'),
               _line(Icons.location_on, trip['dropoff_address'] as String? ?? 'Destination'),

@@ -338,7 +338,14 @@ export async function updateCustomerLocation(tripId: string, customerId: string,
  */
 export async function getCustomerLocation(tripId: string, userId: string) {
   const trip = await getTrip(tripId, userId);
+  const { data: cust } = await supabaseAdmin
+    .from('profiles')
+    .select('full_name, avatar_url')
+    .eq('id', trip.customer_id)
+    .maybeSingle();
   return {
+    customerName: cust?.full_name ?? 'Customer',
+    customerPhoto: cust?.avatar_url ?? null,
     customerLat: trip.customer_lat ?? trip.pickup_lat,
     customerLng: trip.customer_lng ?? trip.pickup_lng,
     updatedAt: trip.customer_location_at ?? null,
@@ -425,7 +432,7 @@ export async function listAvailableTrips(riderProfileId: string) {
 export async function listMyTrips(customerId: string, limit = 50) {
   const { data } = await supabaseAdmin
     .from('trips')
-    .select('id, trip_type, vehicle_class, status, final_fare, base_fare, balance_amount, pickup_address, dropoff_address, errand_type, created_at')
+    .select('id, trip_type, vehicle_class, status, final_fare, base_fare, balance_amount, pickup_address, dropoff_address, errand_type, scheduled_for, created_at')
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false })
     .limit(limit);

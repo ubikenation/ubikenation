@@ -235,6 +235,11 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     // Vehicle step
     if (_step == 2 && _hasVehicleStep) {
       if (!_vehicleForm.currentState!.validate()) return;
+      // Car riders must provide the number-plate photo (shown to customers).
+      if (_kind == 'car' && _platePhoto == null) {
+        setState(() => _error = 'Please upload a clear photo of your number plate');
+        return;
+      }
     }
     // Fee step → pay/confirm before advancing
     final feeStepIndex = _hasVehicleStep ? 3 : 2;

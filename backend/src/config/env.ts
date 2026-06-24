@@ -34,6 +34,14 @@ const schema = z.object({
   CAR_REGISTRATION_FEE: z.coerce.number().int().default(4000),
   MAX_RIDER_PRICE_ADJUSTMENT: z.coerce.number().min(0).max(1).default(0.3),
   UPFRONT_PAYMENT_RATIO: z.coerce.number().min(0).max(1).default(0.5),
+
+  // Background scheduler: fires due commuter plans + scheduled rides into matching.
+  ENABLE_SCHEDULER: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => v !== 'false' && v !== '0'),
+  SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(15_000).default(120_000),
 });
 
 const parsed = schema.safeParse(process.env);

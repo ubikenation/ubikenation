@@ -10,6 +10,7 @@ import '../widgets/app_map.dart';
 import 'booking_screen.dart';
 import 'commuter_plans_screen.dart';
 import 'menu_screens.dart';
+import 'upcoming_rides_screen.dart';
 
 /// Bolt-style home: a full-screen map with a floating bottom sheet to pick a
 /// service and set a destination.
@@ -218,6 +219,14 @@ class _Menu extends StatelessWidget {
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).push(MaterialPageRoute(builder: (_) => const WalletScreen()));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.event),
+              title: const Text('Upcoming Rides'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const UpcomingRidesScreen()));
               },
             ),
             ListTile(
