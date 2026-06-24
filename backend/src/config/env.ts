@@ -42,6 +42,16 @@ const schema = z.object({
     .default('true')
     .transform((v) => v !== 'false' && v !== '0'),
   SCHEDULER_INTERVAL_MS: z.coerce.number().int().min(15_000).default(120_000),
+  // Shared secret so an external cron / pg_cron can call POST /api/plans/run-due
+  // (sent as the x-cron-secret header) without an admin JWT. Empty = header disabled.
+  CRON_SECRET: z.string().optional().default(''),
+
+  // Real route distances via Google Directions (falls back to straight-line on error).
+  ENABLE_REAL_ROUTING: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((v) => v !== 'false' && v !== '0'),
 });
 
 const parsed = schema.safeParse(process.env);

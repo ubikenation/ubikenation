@@ -4,6 +4,7 @@ import { handler, ok, badRequest } from '../../utils/http';
 import { requireAuth } from '../../middleware/auth';
 import { logger } from '../../utils/logger';
 import { initiatePayment, settlePayment } from './payments.service';
+import { reconcileTransfer } from './payouts.service';
 import { paystack } from './paystack.client';
 import { getLedger, getWallet } from '../wallet/wallet.service';
 
@@ -66,12 +67,16 @@ paymentsRouter.post(
       return res.status(401).json({ success: false, error: { code: 'bad_signature' } });
     }
     const event = req.body;
-    if (event?.event === 'charge.success' && event?.data?.reference) {
-      try {
-        await settlePayment(event.data.reference);
-      } catch (e) {
-        logger.error({ e, ref: event.data.reference }, 'webhook settle failed');
+    const ref = event?.data?.reference;
+    try {
+      if (event?.event === 'charge.success' && ref) {
+        await settlePayment(ref);
+      } else if (['transfer.success', 'transfer.failed', 'transfer.reversed'].includes(event?.event) && ref) {
+        // Rider payout settlement (M-Pesa) — reconcile against the payouts table.
+        await reconcileTransfer(ref, event.event);
       }
+    } catch (e) {
+      logger.error({ e, ref, event: event?.event }, 'webhook handling failed');
     }
     // Always 200 quickly so Paystack does not retry-storm.
     res.status(200).json({ received: true });

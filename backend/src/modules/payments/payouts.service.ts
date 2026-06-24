@@ -52,6 +52,23 @@ export async function processPayout(payoutId: string) {
   return { payoutId, amount: payout.amount, status: transfer.status, reference };
 }
 
+/**
+ * Reconciles a payout from a Paystack transfer webhook event. `transfer.success`
+ * marks it completed; `transfer.failed`/`transfer.reversed` flips it back to pending
+ * so it can be retried. Matched by the transfer reference we set at initiation.
+ */
+export async function reconcileTransfer(reference: string, event: string) {
+  const status = event === 'transfer.success' ? 'completed' : 'pending';
+  const { data } = await supabaseAdmin
+    .from('payouts')
+    .update({ status, processed_at: status === 'completed' ? new Date().toISOString() : null })
+    .eq('reference', reference)
+    .select('id')
+    .maybeSingle();
+  if (data) logger.info({ payoutId: data.id, event, status }, 'payout transfer reconciled');
+  return { matched: !!data, status };
+}
+
 /** Admin "mark as paid manually" — for payouts settled out-of-band (e.g. direct M-Pesa). */
 export async function markPayoutPaid(payoutId: string) {
   const { data: payout } = await supabaseAdmin.from('payouts').select('id, status').eq('id', payoutId).single();

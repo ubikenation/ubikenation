@@ -6,6 +6,7 @@ import {
   COMMISSION_ADJUSTED, COMMISSION_NO_ADJUST, VEHICLE_CLASS_KIND, type VehicleClass,
 } from '../../types/domain';
 import { haversineKm, shuffle } from '../matching/matching.service';
+import { getRoute } from '../routing/routing.service';
 
 export interface CreateTripInput {
   customerId: string;
@@ -28,6 +29,16 @@ export interface CreateTripInput {
  * The fare computed here is the system estimate; it becomes the real price at quote time.
  */
 export async function createTrip(input: CreateTripInput) {
+  // Prefer the real driving route (Google Directions) over the client's straight-line
+  // estimate so the booked fare reflects actual roads. Falls back silently if routing
+  // is off/unavailable. Estimates shown pre-booking remain indicative (per the T&C).
+  if (input.dropoff) {
+    const route = await getRoute(input.pickup.lat, input.pickup.lng, input.dropoff.lat, input.dropoff.lng);
+    if (route) {
+      input = { ...input, distanceKm: route.distanceKm, durationMin: route.durationMin };
+    }
+  }
+
   // Errands are priced from the listed items; rides from distance/time/surge.
   const fare =
     input.vehicleClass === 'errands'
