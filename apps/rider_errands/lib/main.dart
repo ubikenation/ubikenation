@@ -28,21 +28,8 @@ Future<void> main() async {
 
   final api = ApiClient();
 
-  // Push notifications (best-effort; never block startup). Riders get "new request"
-  // alerts (foreground banner + system notification in background); token registered
-  // after sign-in.
-  final push = PushService(api, messengerKey: messengerKey);
-  try {
-    await Firebase.initializeApp();
-    await push.init();
-    if (Supabase.instance.client.auth.currentSession != null) {
-      await push.registerToken();
-    }
-    Supabase.instance.client.auth.onAuthStateChange.listen((s) {
-      if (s.session != null) push.registerToken();
-    });
-  } catch (_) {/* Firebase not configured — push disabled, app still runs */}
-
+  // Render the UI immediately. Push/Firebase init runs AFTER, in the background, so a
+  // slow or missing FCM/Google-Play setup can never block startup (no black screen).
   runApp(
     MultiProvider(
       providers: [
@@ -53,6 +40,24 @@ Future<void> main() async {
       child: const RiderApp(),
     ),
   );
+
+  _initPush(api);
+}
+
+/// Best-effort push setup, after the first frame so it never blocks the UI.
+/// Riders get "new request" alerts; token registered after sign-in.
+Future<void> _initPush(ApiClient api) async {
+  final push = PushService(api, messengerKey: messengerKey);
+  try {
+    await Firebase.initializeApp().timeout(const Duration(seconds: 10));
+    await push.init();
+    if (Supabase.instance.client.auth.currentSession != null) {
+      await push.registerToken();
+    }
+    Supabase.instance.client.auth.onAuthStateChange.listen((s) {
+      if (s.session != null) push.registerToken();
+    });
+  } catch (_) {/* Firebase not configured / slow — push disabled, app still runs */}
 }
 
 class RiderApp extends StatelessWidget {

@@ -31,8 +31,25 @@ Future<void> main() async {
   final api = ApiClient();
   final repo = TripRepository(api);
 
-  // Push notifications (best-effort; never block startup). Registers the device
-  // token after sign-in, shows foreground banners, and opens the trip on tap.
+  // Render the UI immediately. Push/Firebase init runs AFTER, in the background, so
+  // a slow or missing FCM/Google-Play setup can never block startup (no black screen).
+  runApp(
+    MultiProvider(
+      providers: [
+        Provider<AuthService>(create: (_) => AuthService()),
+        Provider<ApiClient>.value(value: api),
+        Provider<TripRepository>.value(value: repo),
+      ],
+      child: const UBikeApp(),
+    ),
+  );
+
+  _initPush(api, repo);
+}
+
+/// Best-effort push setup, kicked off after the first frame so it never blocks
+/// the UI. Registers the device token, shows foreground banners, opens the trip on tap.
+Future<void> _initPush(ApiClient api, TripRepository repo) async {
   final push = PushService(
     api,
     messengerKey: messengerKey,
@@ -46,7 +63,7 @@ Future<void> main() async {
     },
   );
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp().timeout(const Duration(seconds: 10));
     await push.init();
     if (Supabase.instance.client.auth.currentSession != null) {
       await push.registerToken();
@@ -54,18 +71,7 @@ Future<void> main() async {
     Supabase.instance.client.auth.onAuthStateChange.listen((s) {
       if (s.session != null) push.registerToken();
     });
-  } catch (_) {/* Firebase not configured — push disabled, app still runs */}
-
-  runApp(
-    MultiProvider(
-      providers: [
-        Provider<AuthService>(create: (_) => AuthService()),
-        Provider<ApiClient>.value(value: api),
-        Provider<TripRepository>.value(value: repo),
-      ],
-      child: const UBikeApp(),
-    ),
-  );
+  } catch (_) {/* Firebase not configured / slow — push disabled, app still runs */}
 }
 
 class UBikeApp extends StatelessWidget {
