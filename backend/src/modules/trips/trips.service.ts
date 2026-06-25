@@ -5,8 +5,9 @@ import { releaseEscrow, refundEscrow } from '../payments/escrow.service';
 import {
   COMMISSION_ADJUSTED, COMMISSION_NO_ADJUST, VEHICLE_CLASS_KIND, type VehicleClass,
 } from '../../types/domain';
-import { haversineKm, shuffle } from '../matching/matching.service';
+import { findNearbyRiders, haversineKm, shuffle } from '../matching/matching.service';
 import { getRoute } from '../routing/routing.service';
+import { notifyProfiles } from '../notifications/notification.service';
 
 export interface CreateTripInput {
   customerId: string;
@@ -81,6 +82,12 @@ export async function createTrip(input: CreateTripInput) {
     .single();
   if (error) throw new AppError(500, `could not create trip: ${error.message}`);
 
+  // Immediate requests go straight to matching — ping nearby riders. Fire-and-forget;
+  // never block the booking on a push. (Scheduled trips ping later, when released.)
+  if (data.status === 'searching') {
+    void notifyNearbyRiders(input.vehicleClass, input.pickup.lat, input.pickup.lng);
+  }
+
   return {
     tripId: data.id,
     fare: data.base_fare,
@@ -88,6 +95,20 @@ export async function createTrip(input: CreateTripInput) {
     balance: data.balance_amount,
     status: data.status,
   };
+}
+
+/** Pushes a "new ride request nearby" to activated, online riders within 5km. */
+async function notifyNearbyRiders(vehicleClass: VehicleClass, lat: number, lng: number) {
+  try {
+    const riders = await findNearbyRiders(vehicleClass, lat, lng, 5);
+    await notifyProfiles(riders.map((r) => r.profileId), {
+      title: 'New ride request nearby',
+      body: 'A customer near you needs a ride. Open U-Bike to accept.',
+      data: { type: 'new_request' },
+    });
+  } catch {
+    /* push is best-effort */
+  }
 }
 
 /**
@@ -166,6 +187,13 @@ export async function quoteFare(tripId: string, riderProfileId: string, proposed
     .eq('id', tripId)
     .eq('status', 'quote_pending');
 
+  // Now the customer can be shown the price — nudge them to confirm & pay.
+  void notifyProfiles([trip.customer_id], {
+    title: 'Your rider is ready',
+    body: `Confirm and pay to start your trip — KES ${finalFare}.`,
+    data: { type: 'rider_found', tripId },
+  });
+
   return {
     finalFare,
     adjusted,
@@ -209,8 +237,13 @@ export async function requeryTrip(tripId: string, customerId: string) {
 }
 
 export async function markArrived(tripId: string, riderProfileId: string) {
-  await loadTripForRider(tripId, riderProfileId);
+  const trip = await loadTripForRider(tripId, riderProfileId);
   await supabaseAdmin.from('trips').update({ status: 'arrived' }).eq('id', tripId).eq('status', 'rider_assigned');
+  void notifyProfiles([trip.customer_id], {
+    title: 'Your rider has arrived',
+    body: 'Your rider is at the pickup point.',
+    data: { type: 'rider_arrived', tripId },
+  });
   return { status: 'arrived' };
 }
 
@@ -540,7 +573,7 @@ async function loadTripForRider(tripId: string, riderProfileId: string) {
   if (!rider) throw forbidden('not a rider');
   const { data: trip } = await supabaseAdmin
     .from('trips')
-    .select('id, status, base_fare, rider_id')
+    .select('id, status, base_fare, rider_id, customer_id')
     .eq('id', tripId)
     .single();
   if (!trip) throw notFound('trip not found');

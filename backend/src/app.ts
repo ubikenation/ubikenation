@@ -11,6 +11,7 @@ import { ridersRouter } from './modules/riders/riders.routes';
 import { paymentsRouter } from './modules/payments/payments.routes';
 import { tripsRouter } from './modules/trips/trips.routes';
 import { plansRouter } from './modules/plans/plans.routes';
+import { notificationsRouter } from './modules/notifications/notifications.routes';
 import { chatRouter } from './modules/chat/chat.routes';
 import { adminRouter } from './modules/admin/admin.routes';
 
@@ -76,6 +77,7 @@ export function createApp() {
   app.use('/api/trips', tripsRouter);
   app.use('/api/trips', chatRouter);
   app.use('/api/plans', plansRouter);
+  app.use('/api/devices', notificationsRouter);
   app.use('/api/admin', adminRouter);
 
   app.use(notFoundHandler);

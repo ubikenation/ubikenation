@@ -21,6 +21,12 @@ const schema = z.object({
 
   REDIS_URL: z.string().optional().default(''),
 
+  // Firebase service account for FCM push (optional; push is a no-op until provided).
+  // Provide EITHER a path to the JSON file OR the raw JSON pasted as one env var
+  // (handy on Render/Vercel where mounting a file is awkward).
+  FIREBASE_SERVICE_ACCOUNT_PATH: z.string().optional().default(''),
+  FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional().default(''),
+
   // Comma-separated web origins allowed to call the API (the website + admin URLs).
   ALLOWED_ORIGINS: z
     .string()
