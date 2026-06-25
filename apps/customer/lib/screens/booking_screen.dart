@@ -12,6 +12,7 @@ import '../services/trip_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
 import 'errands_screen.dart';
+import 'pick_location_screen.dart';
 import 'trip_screen.dart';
 
 /// Booking flow: confirm pickup (your current location, named) → search and pick
@@ -93,6 +94,24 @@ class _BookingScreenState extends State<BookingScreen> {
         _searching = false;
       });
     });
+  }
+
+  /// Lets the customer set their own pickup (search a place or drag the map under a
+  /// pin), in addition to the auto-detected location — Bolt-style.
+  Future<void> _pickPickup() async {
+    final start = _pickup ??
+        const Place(
+          name: 'Current location',
+          shortName: 'Current location',
+          lat: GeocodingService.meruLat,
+          lng: GeocodingService.meruLng,
+        );
+    final result = await Navigator.of(context).push<Place>(
+      MaterialPageRoute(builder: (_) => PickLocationScreen(initial: start, title: 'Set pickup')),
+    );
+    if (result == null || !mounted) return;
+    setState(() => _pickup = result);
+    if (_dropoff != null) await _loadFares();
   }
 
   Future<void> _pickDestination(Place place) async {
@@ -253,15 +272,26 @@ class _BookingScreenState extends State<BookingScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Pickup (named current location)
-                _fieldRow(
-                  icon: Icons.my_location,
-                  iconColor: AppTheme.primary,
-                  child: _locating
-                      ? const Text('Locating you…', style: TextStyle(color: AppTheme.muted))
-                      : Text(_pickup?.name ?? 'Current location',
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: AppTheme.ink, fontWeight: FontWeight.w500)),
+                // Pickup — auto-detected, but tap to set your own (search / drag map).
+                InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: _locating ? null : _pickPickup,
+                  child: _fieldRow(
+                    icon: Icons.my_location,
+                    iconColor: AppTheme.primary,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _locating
+                              ? const Text('Locating you…', style: TextStyle(color: AppTheme.muted))
+                              : Text(_pickup?.name ?? 'Set pickup location',
+                                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: AppTheme.ink, fontWeight: FontWeight.w500)),
+                        ),
+                        const Icon(Icons.edit_location_alt_outlined, size: 18, color: AppTheme.muted),
+                      ],
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 10),
                 // Destination search

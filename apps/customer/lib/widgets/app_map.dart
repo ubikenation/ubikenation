@@ -22,6 +22,7 @@ class AppMap extends StatelessWidget {
     this.interactive = true,
     this.onMapReady,
     this.myLocation,
+    this.onCenterChanged,
   });
 
   final LatLng center;
@@ -30,6 +31,10 @@ class AppMap extends StatelessWidget {
   final MapController? controller;
   final bool interactive;
   final VoidCallback? onMapReady;
+
+  /// Called with the map's centre whenever the user pans/zooms — used to pick a
+  /// pickup point by dragging the map under a fixed pin (Bolt-style).
+  final void Function(LatLng center)? onCenterChanged;
 
   /// When set, draws a fancy pulsing blue "you are here" dot.
   final LatLng? myLocation;
@@ -45,6 +50,7 @@ class AppMap extends StatelessWidget {
         initialCenter: center,
         initialZoom: zoom,
         onMapReady: onMapReady,
+        onPositionChanged: onCenterChanged == null ? null : (camera, _) => onCenterChanged!(camera.center),
         interactionOptions: InteractionOptions(
           flags: interactive ? InteractiveFlag.all & ~InteractiveFlag.rotate : InteractiveFlag.none,
         ),
