@@ -117,6 +117,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Rider passes on a request (explicit decline, or the offer countdown expired):
+  /// hide it locally and tell the backend so it's offered to a different rider.
+  Future<void> _decline(AvailableTrip trip) async {
+    setState(() => _trips = _trips.where((t) => t.id != trip.id).toList());
+    try {
+      await context.read<RiderRepository>().decline(trip.id);
+    } catch (_) {/* best-effort; it just won't be hidden server-side */}
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -250,18 +259,58 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.only(top: 4),
       itemCount: _trips.length,
       separatorBuilder: (_, _) => const SizedBox(height: 10),
-      itemBuilder: (_, i) => _TripCard(trip: _trips[i], onAccept: () => _accept(_trips[i])),
+      itemBuilder: (_, i) => _TripCard(
+        key: ValueKey(_trips[i].id),
+        trip: _trips[i],
+        onAccept: () => _accept(_trips[i]),
+        onDecline: () => _decline(_trips[i]),
+        onExpire: () => _decline(_trips[i]),
+      ),
     );
   }
 }
 
-class _TripCard extends StatelessWidget {
-  const _TripCard({required this.trip, required this.onAccept});
+/// A request offer with a countdown (Bolt-style). If the rider doesn't accept
+/// before the timer runs out, the offer expires and passes to another rider.
+class _TripCard extends StatefulWidget {
+  const _TripCard({super.key, required this.trip, required this.onAccept, required this.onDecline, required this.onExpire});
   final AvailableTrip trip;
   final VoidCallback onAccept;
+  final VoidCallback onDecline;
+  final VoidCallback onExpire;
+
+  @override
+  State<_TripCard> createState() => _TripCardState();
+}
+
+class _TripCardState extends State<_TripCard> {
+  static const _seconds = 30;
+  int _left = _seconds;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return;
+      if (_left <= 1) {
+        t.cancel();
+        widget.onExpire();
+      } else {
+        setState(() => _left--);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final trip = widget.trip;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -280,11 +329,35 @@ class _TripCard extends StatelessWidget {
                 Text('${trip.pickupDistanceKm!.toStringAsFixed(1)} km away', style: const TextStyle(color: AppTheme.muted)),
             ],
           ),
+          const SizedBox(height: 8),
+          // Offer countdown bar.
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: _left / _seconds,
+              minHeight: 5,
+              backgroundColor: Colors.black12,
+              color: _left <= 8 ? AppTheme.red : AppTheme.green,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text('Respond in ${_left}s', style: const TextStyle(fontSize: 11, color: AppTheme.muted)),
           const SizedBox(height: 6),
           _line(Icons.my_location, trip.pickupAddress ?? 'Pickup'),
           _line(Icons.location_on, trip.dropoffAddress ?? 'Destination'),
           const SizedBox(height: 10),
-          SizedBox(width: double.infinity, child: FilledButton(onPressed: onAccept, child: const Text('Accept'))),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(onPressed: widget.onDecline, child: const Text('Decline')),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: FilledButton(onPressed: widget.onAccept, child: const Text('Accept')),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -345,8 +418,8 @@ class _Menu extends StatelessWidget {
                     content: const Text(
                       'Need help?\n\n'
                       '• Keep data/Wi-Fi and GPS on for the whole trip — going offline mid-trip is a violation.\n'
-                      '• You keep 80% of every trip; payouts hit your M-Pesa in 24–48h.\n'
-                      '• You may adjust a fare up to 30% with a valid reason only.\n\n'
+                      '• You keep 80% of every trip (75% if you adjust the fare); payouts hit your M-Pesa in 24–48h.\n'
+                      '• You may adjust a fare up to 30% — no reason needed.\n\n'
                       'Contact: support@ubike.co.ke',
                     ),
                     actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))],

@@ -11,6 +11,8 @@ const NAV = [
   { href: '/aaddmmiinn/founding', label: 'Founding Riders', icon: '🎖️' },
   { href: '/aaddmmiinn/trips', label: 'Trips', icon: '🛣️' },
   { href: '/aaddmmiinn/payouts', label: 'Payouts', icon: '💸' },
+  { href: '/aaddmmiinn/plans', label: 'Commuter Plans', icon: '🔁' },
+  { href: '/aaddmmiinn/disputes', label: 'Disputes', icon: '⚖️' },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {

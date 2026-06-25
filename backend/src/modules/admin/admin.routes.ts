@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { handler, ok } from '../../utils/http';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import {
-  approveRider, getDashboardStats, getFoundingProgram, getRiderDocuments, listPayouts,
-  listRiders, listTrips, rejectRider, setFoundingProgram,
+  approveRider, getDashboardStats, getFoundingProgram, getRiderDocuments, listAllPlans,
+  listDisputes, listPayouts, listRiders, listTrips, refundDispute, rejectRider,
+  resolveDispute, setFoundingProgram,
 } from './admin.service';
 import { markPayoutPaid, processPayout } from '../payments/payouts.service';
 
@@ -58,3 +59,15 @@ adminRouter.post('/payouts/:id/process', handler(async (req, res) => {
 adminRouter.post('/payouts/:id/mark-paid', handler(async (req, res) => {
   ok(res, await markPayoutPaid(req.params.id));
 }));
+
+// GET /api/admin/plans — all commuter (recurring errand) plans.
+adminRouter.get('/plans', handler(async (_req, res) => ok(res, await listAllPlans())));
+
+// GET /api/admin/disputes — trips currently in dispute.
+adminRouter.get('/disputes', handler(async (_req, res) => ok(res, await listDisputes())));
+
+// POST /api/admin/trips/:id/refund — resolve a dispute with a refund to the customer.
+adminRouter.post('/trips/:id/refund', handler(async (req, res) => ok(res, await refundDispute(req.params.id))));
+
+// POST /api/admin/trips/:id/resolve — resolve a dispute without a refund.
+adminRouter.post('/trips/:id/resolve', handler(async (req, res) => ok(res, await resolveDispute(req.params.id))));

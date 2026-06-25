@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { handler, ok } from '../../utils/http';
 import { requireAuth } from '../../middleware/auth';
 import {
-  assignRider, cancelTrip, completeTrip, createTrip, getCustomerLocation, getRiderLocation,
-  getTrip, listAvailableTrips, listMyTrips, markArrived, quoteFare, rateTrip, requeryTrip,
-  startTrip, updateCustomerLocation,
+  assignRider, cancelTrip, completeTrip, createTrip, declineRequest, getCustomerLocation,
+  getRiderLocation, getTrip, listAvailableTrips, listMyTrips, markArrived, openDispute, quoteFare,
+  rateTrip, requeryTrip, startTrip, updateCustomerLocation,
 } from './trips.service';
 
 export const tripsRouter = Router();
@@ -80,6 +80,17 @@ tripsRouter.post('/:id/quote', requireAuth, handler(async (req, res) => {
 // POST /api/trips/:id/requery — customer passes on this rider; re-search a new one.
 tripsRouter.post('/:id/requery', requireAuth, handler(async (req, res) => {
   ok(res, await requeryTrip(req.params.id, req.user!.id));
+}));
+
+// POST /api/trips/:id/decline — rider passes on a request (hides it from them).
+tripsRouter.post('/:id/decline', requireAuth, handler(async (req, res) => {
+  ok(res, await declineRequest(req.params.id, req.user!.id));
+}));
+
+// POST /api/trips/:id/dispute — customer/rider opens a dispute on an active/finished trip.
+tripsRouter.post('/:id/dispute', requireAuth, handler(async (req, res) => {
+  const { reason } = z.object({ reason: z.string().min(1) }).parse(req.body ?? {});
+  ok(res, await openDispute(req.params.id, req.user!.id, reason));
 }));
 
 tripsRouter.post('/:id/arrived', requireAuth, handler(async (req, res) => {

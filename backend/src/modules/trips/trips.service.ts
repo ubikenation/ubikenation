@@ -236,6 +236,43 @@ export async function requeryTrip(tripId: string, customerId: string) {
   return { status: 'searching' };
 }
 
+/**
+ * Rider explicitly passes on a request: they're added to the trip's declined list
+ * so it disappears from their available list and a different rider gets it. Best for
+ * a request the rider doesn't want (too far, wrong direction, etc.).
+ */
+export async function declineRequest(tripId: string, riderProfileId: string) {
+  const { data: rider } = await supabaseAdmin.from('riders').select('id').eq('profile_id', riderProfileId).single();
+  if (!rider) throw forbidden('not a rider');
+  const { data: trip } = await supabaseAdmin
+    .from('trips')
+    .select('id, status, declined_rider_ids')
+    .eq('id', tripId)
+    .single();
+  if (!trip) throw notFound('trip not found');
+  const declined = new Set((trip.declined_rider_ids as string[] | null) ?? []);
+  declined.add(rider.id);
+  await supabaseAdmin.from('trips').update({ declined_rider_ids: [...declined] }).eq('id', tripId);
+  return { declined: true };
+}
+
+/**
+ * Customer or assigned rider opens a dispute on an active/finished trip (when an
+ * automatic cancel/refund isn't allowed). Moves the trip to `disputed` for an admin
+ * to resolve (refund the customer, or resolve in the rider's favour).
+ */
+export async function openDispute(tripId: string, userId: string, reason: string) {
+  const trip = await getTrip(tripId, userId); // verifies the caller is a party
+  if (!['in_progress', 'awaiting_balance', 'arrived', 'completed'].includes(trip.status)) {
+    throw conflict('this trip cannot be disputed at its current stage');
+  }
+  await supabaseAdmin
+    .from('trips')
+    .update({ status: 'disputed', cancel_reason: reason })
+    .eq('id', tripId);
+  return { status: 'disputed' };
+}
+
 export async function markArrived(tripId: string, riderProfileId: string) {
   const trip = await loadTripForRider(tripId, riderProfileId);
   await supabaseAdmin.from('trips').update({ status: 'arrived' }).eq('id', tripId).eq('status', 'rider_assigned');

@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../../config/supabase';
 import { env } from '../../config/env';
-import { AppError, notFound } from '../../utils/http';
+import { AppError, conflict, notFound } from '../../utils/http';
+import { applyWallet } from '../wallet/wallet.service';
 
 /** Aggregate counters for the dashboard header + analytics. */
 export async function getDashboardStats() {
@@ -148,6 +149,84 @@ export async function listPayouts(status?: string) {
   if (status) q = q.eq('status', status);
   const { data } = await q;
   return data ?? [];
+}
+
+/** All commuter (recurring errand) plans across customers, for the admin. */
+export async function listAllPlans(limit = 200) {
+  const { data } = await supabaseAdmin
+    .from('commuter_plans')
+    .select('id, errand_type, description, frequency, time_of_day, fare_estimate, status, next_run_at, created_at, profiles!commuter_plans_customer_id_fkey(full_name)')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  return data ?? [];
+}
+
+/** Trips currently in dispute, for admin resolution. */
+export async function listDisputes(limit = 100) {
+  const { data } = await supabaseAdmin
+    .from('trips')
+    .select('id, status, final_fare, upfront_amount, balance_amount, cancel_reason, created_at, customer_id, profiles!trips_customer_id_fkey(full_name)')
+    .eq('status', 'disputed')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  return data ?? [];
+}
+
+/**
+ * Resolves a dispute WITH a refund: returns what the customer actually paid to
+ * their wallet (held escrow if still held, otherwise the sum of their successful
+ * trip payments), then marks the trip cancelled.
+ */
+export async function refundDispute(tripId: string) {
+  const { data: trip } = await supabaseAdmin
+    .from('trips')
+    .select('id, customer_id, status')
+    .eq('id', tripId)
+    .single();
+  if (!trip) throw notFound('trip not found');
+  if (trip.status !== 'disputed') throw conflict('trip is not in dispute');
+
+  const { data: esc } = await supabaseAdmin.from('escrow').select('amount, status').eq('trip_id', tripId).maybeSingle();
+  let refund = 0;
+  if (esc && esc.status === 'held') {
+    refund = esc.amount;
+    await supabaseAdmin.from('escrow').update({ status: 'refunded', refunded_at: new Date().toISOString() }).eq('trip_id', tripId);
+  } else {
+    const { data: pays } = await supabaseAdmin
+      .from('payments')
+      .select('amount')
+      .eq('trip_id', tripId)
+      .eq('status', 'success')
+      .in('purpose', ['trip_upfront', 'trip_balance']);
+    refund = (pays ?? []).reduce((s, p) => s + (p.amount ?? 0), 0);
+  }
+
+  if (refund > 0) {
+    await applyWallet({
+      profileId: trip.customer_id,
+      direction: 'credit',
+      amount: refund,
+      reason: `Dispute refund for trip ${tripId}`,
+      tripId,
+    });
+  }
+  await supabaseAdmin
+    .from('trips')
+    .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancel_reason: 'dispute_refunded' })
+    .eq('id', tripId);
+  return { refunded: refund };
+}
+
+/** Resolves a dispute WITHOUT a refund (in the rider's favour) → marks completed. */
+export async function resolveDispute(tripId: string) {
+  const { data: trip } = await supabaseAdmin.from('trips').select('id, status').eq('id', tripId).single();
+  if (!trip) throw notFound('trip not found');
+  if (trip.status !== 'disputed') throw conflict('trip is not in dispute');
+  await supabaseAdmin
+    .from('trips')
+    .update({ status: 'completed', completed_at: new Date().toISOString() })
+    .eq('id', tripId);
+  return { resolved: true };
 }
 
 // ---- helpers ----
