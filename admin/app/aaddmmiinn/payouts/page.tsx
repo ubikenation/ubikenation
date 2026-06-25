@@ -23,10 +23,28 @@ const COLORS: Record<string, string> = {
 export default function PayoutsPage() {
   const [payouts, setPayouts] = useState<Payout[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  function reload() {
+    api.get('/api/admin/payouts').then((d) => setPayouts(d as Payout[])).catch((e) => setError(e.message));
+  }
 
   useEffect(() => {
-    api.get('/api/admin/payouts').then((d) => setPayouts(d as Payout[])).catch((e) => setError(e.message));
+    reload();
   }, []);
+
+  async function act(id: string, action: 'process' | 'mark-paid') {
+    setBusyId(id);
+    setError(null);
+    try {
+      await api.post(`/api/admin/payouts/${id}/${action}`);
+      reload();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const totalPending = payouts.filter((p) => p.status === 'pending').reduce((s, p) => s + p.amount, 0);
 
@@ -50,12 +68,13 @@ export default function PayoutsPage() {
               <th className="px-4 py-3 font-medium">Amount</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Requested</th>
+              <th className="px-4 py-3 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
             {payouts.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-400">No payouts yet.</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">No payouts yet.</td>
               </tr>
             )}
             {payouts.map((p) => (
@@ -68,6 +87,28 @@ export default function PayoutsPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-500">{new Date(p.created_at).toLocaleString()}</td>
+                <td className="px-4 py-3">
+                  {p.status === 'pending' ? (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => act(p.id, 'process')}
+                        disabled={busyId === p.id}
+                        className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sky-700 disabled:opacity-50"
+                      >
+                        {busyId === p.id ? '…' : 'Send M-Pesa'}
+                      </button>
+                      <button
+                        onClick={() => act(p.id, 'mark-paid')}
+                        disabled={busyId === p.id}
+                        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        Mark paid
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-400">—</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
