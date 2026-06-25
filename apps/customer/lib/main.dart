@@ -14,6 +14,11 @@ import 'widgets/animated_splash.dart';
 import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/trip_screen.dart';
+
+/// Global keys so push notifications can show an in-app banner and navigate.
+final navigatorKey = GlobalKey<NavigatorState>();
+final messengerKey = GlobalKey<ScaffoldMessengerState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,10 +29,22 @@ Future<void> main() async {
   );
 
   final api = ApiClient();
+  final repo = TripRepository(api);
 
   // Push notifications (best-effort; never block startup). Registers the device
-  // token after sign-in and on every future sign-in.
-  final push = PushService(api);
+  // token after sign-in, shows foreground banners, and opens the trip on tap.
+  final push = PushService(
+    api,
+    messengerKey: messengerKey,
+    onOpen: (data) async {
+      final tripId = data['tripId'];
+      if (tripId is! String) return;
+      try {
+        final trip = await repo.getTrip(tripId);
+        navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => TripScreen(trip: trip)));
+      } catch (_) {/* trip gone / not signed in */}
+    },
+  );
   try {
     await Firebase.initializeApp();
     await push.init();
@@ -44,7 +61,7 @@ Future<void> main() async {
       providers: [
         Provider<AuthService>(create: (_) => AuthService()),
         Provider<ApiClient>.value(value: api),
-        Provider<TripRepository>(create: (_) => TripRepository(api)),
+        Provider<TripRepository>.value(value: repo),
       ],
       child: const UBikeApp(),
     ),
@@ -59,6 +76,8 @@ class UBikeApp extends StatelessWidget {
     return MaterialApp(
       title: 'U-Bike',
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
+      scaffoldMessengerKey: messengerKey,
       theme: AppTheme.light,
       home: const AnimatedSplash(next: ConnectivityGate(child: _AuthGate())),
     );

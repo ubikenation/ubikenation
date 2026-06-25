@@ -15,6 +15,9 @@ import 'screens/auth_screen.dart';
 import 'screens/gate_screen.dart';
 import 'screens/splash_screen.dart';
 
+/// Global key so foreground push can show an in-app banner.
+final messengerKey = GlobalKey<ScaffoldMessengerState>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
@@ -26,8 +29,9 @@ Future<void> main() async {
   final api = ApiClient();
 
   // Push notifications (best-effort; never block startup). Riders get "new request"
-  // alerts; token is registered after sign-in.
-  final push = PushService(api);
+  // alerts (foreground banner + system notification in background); token registered
+  // after sign-in.
+  final push = PushService(api, messengerKey: messengerKey);
   try {
     await Firebase.initializeApp();
     await push.init();
@@ -59,6 +63,7 @@ class RiderApp extends StatelessWidget {
     return MaterialApp(
       title: 'U-Bike Rider',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: messengerKey,
       theme: AppTheme.light,
       home: const AnimatedSplash(next: ConnectivityGate(child: _AuthGate())),
     );
