@@ -56,7 +56,12 @@ class _GateScreenState extends State<GateScreen> {
         }
 
         final rider = snap.data;
-        if (rider == null) return RegistrationScreen(onDone: _reload);
+        // No record, OR a record still in `submitted` (registration was started but the
+        // documents/fee were not completed) → resume registration instead of jumping
+        // to Account Status. The status only becomes `under_review` once everything is in.
+        if (rider == null || rider.status == 'submitted') {
+          return RegistrationScreen(onDone: _reload);
+        }
         if (rider.status == 'activated') return const HomeScreen();
         return AccountStatusScreen(rider: rider, onRefresh: _reload);
       },

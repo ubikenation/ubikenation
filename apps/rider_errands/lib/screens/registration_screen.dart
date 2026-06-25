@@ -75,6 +75,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     try {
       final fee = await context.read<RiderRepository>().register();
       if (mounted) setState(() => _fee = fee);
+      // Resume: restore any documents/plate photo already uploaded in a previous session.
+      final existing = await _storage.existingDocs([..._docKeys, 'plate_photo_url']);
+      if (mounted && existing.isNotEmpty) {
+        setState(() {
+          for (final e in existing.entries) {
+            if (_docs.containsKey(e.key)) _docs[e.key] = e.value;
+          }
+          _platePhoto = existing['plate_photo_url'] ?? _platePhoto;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {

@@ -29,4 +29,24 @@ class StorageService {
         );
     return path;
   }
+
+  /// Returns, for the given doc keys, the stored object paths that already exist for
+  /// this user — so a rider who exits mid-registration and returns doesn't have to
+  /// re-upload photos they already provided.
+  Future<Map<String, String>> existingDocs(List<String> keys) async {
+    final client = Supabase.instance.client;
+    final uid = client.auth.currentUser?.id;
+    if (uid == null) return {};
+    try {
+      final files = await client.storage.from(bucket).list(path: uid);
+      final names = files.map((f) => f.name).toSet();
+      final out = <String, String>{};
+      for (final k in keys) {
+        if (names.contains('$k.jpg')) out[k] = '$uid/$k.jpg';
+      }
+      return out;
+    } catch (_) {
+      return {};
+    }
+  }
 }
