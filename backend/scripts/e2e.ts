@@ -311,6 +311,53 @@ async function main() {
   ok('POST /api/trips/schedule → scheduled', sched.status === 201 && sched.data.data.status === 'scheduled',
     `status=${sched.data?.data?.status}`);
 
+  // 31) DEVICE TOKEN registration (FCM)
+  const dev = await C.post('/api/devices/register', { token: `e2e-token-${stamp}`, platform: 'android' });
+  ok('POST /api/devices/register (FCM token)', dev.status === 200 && dev.data.data.ok === true);
+
+  // 32) RIDER EXPLICIT DECLINE → request hidden from that rider
+  const trip5 = await C.post('/api/trips', {
+    tripType: 'bike', vehicleClass: 'standard_bike',
+    pickup: { lat: -1.2921, lng: 36.8219, address: 'CBD' },
+    dropoff: { lat: -1.30, lng: 36.79, address: 'Near' },
+    distanceKm: 4, durationMin: 12,
+  });
+  const tripId5 = trip5.data?.data?.tripId as string;
+  const dec = await R.post(`/api/trips/${tripId5}/decline`);
+  ok('POST /api/trips/:id/decline', dec.status === 200 && dec.data.data.declined === true);
+  const avail5 = await R.get('/api/trips/available');
+  ok('Declined request hidden from the rider', avail5.status === 200 && !avail5.data.data.some((t: { id: string }) => t.id === tripId5));
+
+  // 33) DISPUTE → admin sees it → admin REFUND → customer wallet credited, trip cancelled
+  const trip4 = await C.post('/api/trips', {
+    tripType: 'bike', vehicleClass: 'standard_bike',
+    pickup: { lat: -1.2921, lng: 36.8219, address: 'CBD' },
+    dropoff: { lat: -1.30, lng: 36.78, address: 'Westlands' },
+    distanceKm: 6, durationMin: 18,
+  });
+  const tripId4 = trip4.data?.data?.tripId as string;
+  await R.post(`/api/trips/${tripId4}/accept`);
+  await R.post(`/api/trips/${tripId4}/quote`, {});
+  await fundUpfront(tripId4);
+  await R.post(`/api/trips/${tripId4}/arrived`);
+  await R.post(`/api/trips/${tripId4}/start`);
+  const dsp = await C.post(`/api/trips/${tripId4}/dispute`, { reason: 'Took the wrong route' });
+  ok('POST /api/trips/:id/dispute → disputed', dsp.status === 200 && dsp.data.data.status === 'disputed', errMsg(dsp.data));
+  const aDisp = await A.get('/api/admin/disputes');
+  ok('Admin sees the open dispute', aDisp.status === 200 && aDisp.data.data.some((d: { id: string }) => d.id === tripId4));
+  const wBefore = (await C.get('/api/payments/wallet')).data.data.wallet.balance as number;
+  const refund = await A.post(`/api/admin/trips/${tripId4}/refund`);
+  ok('Admin refund returns amount', refund.status === 200 && refund.data.data.refunded > 0, `refunded=${refund.data?.data?.refunded}`);
+  const wAfter = (await C.get('/api/payments/wallet')).data.data.wallet.balance as number;
+  ok('Customer wallet credited by the refund', wAfter > wBefore, `before=${wBefore} after=${wAfter}`);
+  const { data: t4row } = await supabaseAdmin.from('trips').select('status').eq('id', tripId4).single();
+  ok('Disputed trip → cancelled after refund', t4row!.status === 'cancelled', `status=${t4row?.status}`);
+
+  // 34) ADMIN commuter-plans list
+  const aPlans = await A.get('/api/admin/plans');
+  ok('GET /api/admin/plans', aPlans.status === 200 && Array.isArray(aPlans.data.data) && aPlans.data.data.length > 0,
+    `count=${aPlans.data?.data?.length}`);
+
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   process.exit(fail === 0 ? 0 : 1);
 }
