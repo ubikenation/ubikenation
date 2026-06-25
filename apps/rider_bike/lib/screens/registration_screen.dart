@@ -341,8 +341,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       child: Column(
         children: [
           _tf(_fullName, 'Full name (as on ID)', cap: true),
-          _tf(_idNumber, 'National ID number', keyboard: TextInputType.number),
-          _tf(_phone, 'Phone (M-Pesa) e.g. 07XXXXXXXX', keyboard: TextInputType.phone),
+          _tf(_idNumber, 'National ID number', keyboard: TextInputType.number, validator: _validateId),
+          _tf(_phone, 'Phone (M-Pesa) e.g. 07XXXXXXXX', keyboard: TextInputType.phone, validator: _validatePhone),
           const SizedBox(height: 10),
           InkWell(
             onTap: _pickDob,
@@ -367,7 +367,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           _tf(_town, 'Town'),
           _tf(_county, 'County'),
           _tf(_kinName, 'Next of kin — full name', cap: true),
-          _tf(_kinPhone, 'Next of kin — phone', keyboard: TextInputType.phone),
+          _tf(_kinPhone, 'Next of kin — phone', keyboard: TextInputType.phone, validator: _validatePhone),
         ],
       ),
     );
@@ -470,7 +470,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   }
 
   // ---- widgets ----
-  Widget _tf(TextEditingController c, String label, {TextInputType? keyboard, bool cap = false}) {
+  Widget _tf(TextEditingController c, String label, {TextInputType? keyboard, bool cap = false, String? Function(String?)? validator}) {
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: TextFormField(
@@ -478,9 +478,25 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         keyboardType: keyboard,
         textCapitalization: cap ? TextCapitalization.words : TextCapitalization.none,
         decoration: InputDecoration(labelText: label),
-        validator: (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
+        validator: validator ?? (v) => (v == null || v.trim().isEmpty) ? 'Required' : null,
       ),
     );
+  }
+
+  /// Kenyan National ID: 7–8 digits.
+  static String? _validateId(String? v) {
+    final s = (v ?? '').trim();
+    if (s.isEmpty) return 'Required';
+    if (!RegExp(r'^\d{7,8}$').hasMatch(s)) return 'Enter a valid National ID (7–8 digits)';
+    return null;
+  }
+
+  /// Kenyan phone: 07XXXXXXXX / 01XXXXXXXX, or +2547…/2547…/+2541…/2541… .
+  static String? _validatePhone(String? v) {
+    final s = (v ?? '').trim().replaceAll(' ', '');
+    if (s.isEmpty) return 'Required';
+    if (!RegExp(r'^(?:\+?254|0)(?:7|1)\d{8}$').hasMatch(s)) return 'Enter a valid phone (e.g. 0712345678)';
+    return null;
   }
 
   Widget _docTile(String key) {

@@ -4,8 +4,8 @@ import { handler, ok } from '../../utils/http';
 import { requireAuth } from '../../middleware/auth';
 import {
   assignRider, cancelTrip, completeTrip, createTrip, declineRequest, getCustomerLocation,
-  getRiderLocation, getTrip, listAvailableTrips, listMyTrips, markArrived, openDispute, quoteFare,
-  rateTrip, requeryTrip, startTrip, updateCustomerLocation,
+  getRiderLocation, getTrip, hideTrip, listAvailableTrips, listMyTrips, markArrived, openDispute,
+  quoteFare, rateTrip, requeryTrip, startTrip, updateCustomerLocation,
 } from './trips.service';
 
 export const tripsRouter = Router();
@@ -109,6 +109,11 @@ tripsRouter.post('/:id/complete', requireAuth, handler(async (req, res) => {
 tripsRouter.post('/:id/cancel', requireAuth, handler(async (req, res) => {
   const { reason } = z.object({ reason: z.string().optional() }).parse(req.body ?? {});
   ok(res, await cancelTrip(req.params.id, req.user!.id, reason));
+}));
+
+// POST /api/trips/:id/hide — customer removes a finished trip from their history.
+tripsRouter.post('/:id/hide', requireAuth, handler(async (req, res) => {
+  ok(res, await hideTrip(req.params.id, req.user!.id));
 }));
 
 // POST /api/trips/:id/rate — customer rates the rider.

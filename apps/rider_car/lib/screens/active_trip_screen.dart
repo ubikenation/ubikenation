@@ -213,15 +213,36 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     }
   }
 
+  String _errandDescription(Map<String, dynamic> trip) {
+    if (trip['vehicle_class'] != 'errands') return '';
+    final details = trip['errand_details'];
+    if (details is Map && details['description'] is String) return details['description'] as String;
+    return '';
+  }
+
   @override
   Widget build(BuildContext context) {
     final trip = _trip;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Active Trip')),
-      body: SafeArea(
-        child: trip == null
-            ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-            : Padding(padding: const EdgeInsets.all(20), child: _content(trip)),
+    // A rider can't just back out of a live trip — they must see it through (or it
+    // ends via complete/dispute). Leaving is allowed once it's finished/cancelled.
+    final status = trip?['status'] as String?;
+    final canLeave = trip == null || ['completed', 'cancelled', 'disputed'].contains(status);
+    return PopScope(
+      canPop: canLeave,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Finish or report the trip before leaving.'), duration: Duration(seconds: 2)),
+          );
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Active Trip'), automaticallyImplyLeading: canLeave),
+        body: SafeArea(
+          child: trip == null
+              ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+              : Padding(padding: const EdgeInsets.all(20), child: _content(trip)),
+        ),
       ),
     );
   }
@@ -276,6 +297,27 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
               const SizedBox(height: 6),
               _line(Icons.my_location, trip['pickup_address'] as String? ?? 'Pickup'),
               _line(Icons.location_on, trip['dropoff_address'] as String? ?? 'Destination'),
+              if (_errandDescription(trip).isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.shopping_bag_outlined, size: 14, color: AppTheme.primary),
+                        const SizedBox(width: 6),
+                        Text('What to do: ${(trip['errand_type'] as String? ?? 'Errand').replaceAll('_', ' ')}',
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+                      ]),
+                      const SizedBox(height: 4),
+                      Text(_errandDescription(trip), style: const TextStyle(fontSize: 12, color: AppTheme.muted)),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 6),
               Text('Status: ${_pretty(status)}', style: const TextStyle(color: AppTheme.primaryDark)),
             ],

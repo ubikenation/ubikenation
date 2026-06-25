@@ -491,7 +491,7 @@ export async function listAvailableTrips(riderProfileId: string) {
   const classes = CLASSES_BY_KIND[rider.kind as keyof typeof CLASSES_BY_KIND] ?? [];
   const { data: trips } = await supabaseAdmin
     .from('trips')
-    .select('id, vehicle_class, pickup_lat, pickup_lng, pickup_address, dropoff_address, base_fare, final_fare, distance_km, duration_min, created_at, declined_rider_ids')
+    .select('id, vehicle_class, pickup_lat, pickup_lng, pickup_address, dropoff_address, base_fare, final_fare, distance_km, duration_min, errand_type, errand_details, created_at, declined_rider_ids')
     .eq('status', 'searching')
     .in('vehicle_class', classes)
     .order('created_at', { ascending: false })
@@ -521,9 +521,22 @@ export async function listMyTrips(customerId: string, limit = 50) {
     .from('trips')
     .select('id, trip_type, vehicle_class, status, final_fare, base_fare, balance_amount, pickup_address, dropoff_address, errand_type, scheduled_for, created_at')
     .eq('customer_id', customerId)
+    .eq('hidden_by_customer', false)
     .order('created_at', { ascending: false })
     .limit(limit);
   return data ?? [];
+}
+
+/** Customer removes a trip from their history (soft delete; only terminal trips). */
+export async function hideTrip(tripId: string, customerId: string) {
+  const { data: trip } = await supabaseAdmin.from('trips').select('id, customer_id, status').eq('id', tripId).single();
+  if (!trip) throw notFound('trip not found');
+  if (trip.customer_id !== customerId) throw forbidden();
+  if (!['completed', 'cancelled', 'expired'].includes(trip.status)) {
+    throw conflict('only finished trips can be removed from history');
+  }
+  await supabaseAdmin.from('trips').update({ hidden_by_customer: true }).eq('id', tripId);
+  return { hidden: true };
 }
 
 /** Returns a trip if the caller is the customer or the assigned rider. */

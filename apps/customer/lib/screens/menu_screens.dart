@@ -149,6 +149,28 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
 
   void _reload() => setState(() => _future = context.read<TripRepository>().myTrips());
 
+  Future<void> _delete(String id) async {
+    final repo = context.read<TripRepository>();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove from history?'),
+        content: const Text('This trip will be removed from your history.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await repo.hideTrip(id);
+      _reload();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -183,11 +205,21 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(_pretty(t['vehicle_class'] as String? ?? ''),
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.ink)),
+                        Expanded(
+                          child: Text(_pretty(t['vehicle_class'] as String? ?? ''),
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.ink)),
+                        ),
                         Text('KES $fare', style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primary)),
+                        if (status == 'completed' || status == 'cancelled')
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            icon: const Icon(Icons.delete_outline, size: 18, color: AppTheme.muted),
+                            tooltip: 'Remove from history',
+                            onPressed: () => _delete(t['id'] as String),
+                          ),
                       ],
                     ),
                     const SizedBox(height: 4),

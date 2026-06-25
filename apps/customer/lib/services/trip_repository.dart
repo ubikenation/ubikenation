@@ -106,6 +106,9 @@ class TripRepository {
     return d.cast<Map<String, dynamic>>();
   }
 
+  /// Removes a finished trip from the customer's history.
+  Future<void> hideTrip(String tripId) => _api.post('/api/trips/$tripId/hide');
+
   /// Wallet balance + recent ledger entries.
   Future<Map<String, dynamic>> wallet() async => await _api.get('/api/payments/wallet') as Map<String, dynamic>;
 

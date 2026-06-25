@@ -10,6 +10,7 @@ import '../widgets/app_map.dart';
 import 'booking_screen.dart';
 import 'commuter_plans_screen.dart';
 import 'menu_screens.dart';
+import 'terms_screen.dart';
 import 'upcoming_rides_screen.dart';
 
 /// Bolt-style home: a full-screen map with a floating bottom sheet to pick a
@@ -243,6 +244,14 @@ class _Menu extends StatelessWidget {
               onTap: () {
                 Navigator.pop(context);
                 Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SupportScreen()));
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Terms & Conditions'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TermsScreen()));
               },
             ),
             const Spacer(),

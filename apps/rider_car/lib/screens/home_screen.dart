@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
 import 'active_trip_screen.dart';
 import 'earnings_screen.dart';
+import 'terms_screen.dart';
 
 /// Bolt-driver-style home. The rider is automatically ONLINE whenever the app is
 /// open and connected (enforced app-wide by the connectivity gate) — there is no
@@ -345,6 +346,29 @@ class _TripCardState extends State<_TripCard> {
           const SizedBox(height: 6),
           _line(Icons.my_location, trip.pickupAddress ?? 'Pickup'),
           _line(Icons.location_on, trip.dropoffAddress ?? 'Destination'),
+          // For errands, show exactly what the customer asked for so the rider can
+          // decide whether to accept or adjust the price.
+          if (trip.isErrand && (trip.errandDescription?.isNotEmpty ?? false)) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: AppTheme.surface, borderRadius: BorderRadius.circular(10)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    const Icon(Icons.shopping_bag_outlined, size: 14, color: AppTheme.primary),
+                    const SizedBox(width: 6),
+                    Text((trip.errandType ?? 'Errand').replaceAll('_', ' '),
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppTheme.ink)),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(trip.errandDescription!, style: const TextStyle(fontSize: 12, color: AppTheme.muted)),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [
@@ -425,6 +449,14 @@ class _Menu extends StatelessWidget {
                     actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))],
                   ),
                 );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Terms & Conditions'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TermsScreen()));
               },
             ),
             const Spacer(),

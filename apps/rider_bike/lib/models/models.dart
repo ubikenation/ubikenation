@@ -61,6 +61,8 @@ class AvailableTrip {
   final double distanceKm;
   final double durationMin;
   final double? pickupDistanceKm;
+  final String? errandType;
+  final String? errandDescription;
 
   const AvailableTrip({
     required this.id,
@@ -71,7 +73,11 @@ class AvailableTrip {
     required this.distanceKm,
     required this.durationMin,
     required this.pickupDistanceKm,
+    this.errandType,
+    this.errandDescription,
   });
+
+  bool get isErrand => vehicleClass == 'errands';
 
   factory AvailableTrip.fromJson(Map<String, dynamic> j) => AvailableTrip(
         id: j['id'] as String,
@@ -82,6 +88,8 @@ class AvailableTrip {
         distanceKm: (j['distance_km'] as num?)?.toDouble() ?? 0,
         durationMin: (j['duration_min'] as num?)?.toDouble() ?? 0,
         pickupDistanceKm: (j['pickupDistanceKm'] as num?)?.toDouble(),
+        errandType: j['errand_type'] as String?,
+        errandDescription: (j['errand_details'] as Map<String, dynamic>?)?['description'] as String?,
       );
 }
 

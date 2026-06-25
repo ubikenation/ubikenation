@@ -66,7 +66,7 @@ class RiderApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'U-Bike Rider',
+      title: 'ErrandX',
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: messengerKey,
       theme: AppTheme.light,
