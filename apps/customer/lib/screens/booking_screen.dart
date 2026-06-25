@@ -114,6 +114,24 @@ class _BookingScreenState extends State<BookingScreen> {
     if (_dropoff != null) await _loadFares();
   }
 
+  /// Set the destination by dragging the map under a pin (Bolt-style), as an
+  /// alternative to searching.
+  Future<void> _pickDestinationOnMap() async {
+    final start = _dropoff ??
+        _pickup ??
+        const Place(
+          name: 'Meru',
+          shortName: 'Meru',
+          lat: GeocodingService.meruLat,
+          lng: GeocodingService.meruLng,
+        );
+    final result = await Navigator.of(context).push<Place>(
+      MaterialPageRoute(builder: (_) => PickLocationScreen(initial: start, title: 'Set destination')),
+    );
+    if (result == null || !mounted) return;
+    await _pickDestination(result);
+  }
+
   Future<void> _pickDestination(Place place) async {
     FocusScope.of(context).unfocus();
     _destCtrl.text = place.shortName;
@@ -294,19 +312,31 @@ class _BookingScreenState extends State<BookingScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                // Destination search
+                // Destination — search, or tap the pin icon to set it on the map.
                 _fieldRow(
                   icon: Icons.location_on,
                   iconColor: AppTheme.accent,
-                  child: TextField(
-                    controller: _destCtrl,
-                    onChanged: _onDestChanged,
-                    textInputAction: TextInputAction.search,
-                    decoration: const InputDecoration(
-                      hintText: 'Search destination (e.g. Maua, Meru)…',
-                      border: InputBorder.none,
-                      isDense: true,
-                    ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _destCtrl,
+                          onChanged: _onDestChanged,
+                          textInputAction: TextInputAction.search,
+                          decoration: const InputDecoration(
+                            hintText: 'Search destination (e.g. Maua, Meru)…',
+                            border: InputBorder.none,
+                            isDense: true,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Set on map',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.map_outlined, size: 20, color: AppTheme.muted),
+                        onPressed: _pickDestinationOnMap,
+                      ),
+                    ],
                   ),
                 ),
 

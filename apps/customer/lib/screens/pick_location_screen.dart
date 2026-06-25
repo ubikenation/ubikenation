@@ -66,14 +66,21 @@ class _PickLocationScreenState extends State<PickLocationScreen> {
 
   Future<void> _confirm() async {
     setState(() => _confirming = true);
-    final name = await _geo.reverse(_center.latitude, _center.longitude);
+    // Read the map's actual current centre at confirm time (most reliable).
+    LatLng target;
+    try {
+      target = _map.camera.center;
+    } catch (_) {
+      target = _center;
+    }
+    final name = await _geo.reverse(target.latitude, target.longitude);
     if (!mounted) return;
     final label = name ?? 'Pinned location';
     Navigator.of(context).pop(Place(
       name: label,
       shortName: label.split(',').first.trim(),
-      lat: _center.latitude,
-      lng: _center.longitude,
+      lat: target.latitude,
+      lng: target.longitude,
     ));
   }
 

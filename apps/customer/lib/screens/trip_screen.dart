@@ -215,10 +215,23 @@ class _TripScreenState extends State<TripScreen> {
   @override
   Widget build(BuildContext context) {
     final tracking = _trackStatuses.contains(_trip.status) && _riderLoc != null;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Your Trip')),
-      body: SafeArea(
-        child: tracking ? _trackingView() : Padding(padding: const EdgeInsets.all(20), child: _body()),
+    // You can't just back out of a live trip — the only way out is Cancel (so a request
+    // isn't silently abandoned). Once it's completed/cancelled, leaving is allowed.
+    final canLeave = _trip.status == 'completed' || _trip.status == 'cancelled';
+    return PopScope(
+      canPop: canLeave,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Tap “Cancel” to leave this trip.'), duration: Duration(seconds: 2)),
+          );
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Your Trip'), automaticallyImplyLeading: canLeave),
+        body: SafeArea(
+          child: tracking ? _trackingView() : Padding(padding: const EdgeInsets.all(20), child: _body()),
+        ),
       ),
     );
   }
@@ -418,13 +431,7 @@ class _TripScreenState extends State<TripScreen> {
       case 'quote_pending':
         return _findingBlock();
       case 'awaiting_payment':
-        return _payBlock(
-          title: 'Rider found!',
-          subtitle: 'This is your rider. Pay 50% now to confirm — the other half is paid when you reach your destination.',
-          amount: _trip.upfront,
-          onPay: _payUpfront,
-          showRider: true,
-        );
+        return _riderFoundBlock();
       case 'rider_assigned':
       case 'arrived':
         return _statusBlock(Icons.directions_bike, 'Rider assigned — loading live map…');
@@ -446,18 +453,20 @@ class _TripScreenState extends State<TripScreen> {
     }
   }
 
-  /// Plain "finding a rider" loading — deliberately neutral; the customer should
-  /// not see the rider accepting/quoting, it should just feel like normal loading.
+  /// Fancy "finding a rider" loading — an animated radar pulse so the wait feels
+  /// alive. The customer never sees the rider accept/quote; it just feels like search.
   Widget _findingBlock() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const CircularProgressIndicator(color: AppTheme.primary),
-        const SizedBox(height: 24),
+        const Spacer(),
+        const _SearchingRadar(),
+        const SizedBox(height: 28),
         const Text('Finding you the closest rider…',
-            textAlign: TextAlign.center, style: TextStyle(fontSize: 18, color: AppTheme.ink)),
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: AppTheme.ink)),
         const SizedBox(height: 8),
-        const Text('Hang tight, this only takes a moment.', style: TextStyle(color: AppTheme.muted)),
+        const Text('Matching you with a nearby rider. Hang tight…',
+            textAlign: TextAlign.center, style: TextStyle(color: AppTheme.muted)),
         const Spacer(),
         TextButton(
           onPressed: _busy ? null : _findAnotherRider,
@@ -471,15 +480,103 @@ class _TripScreenState extends State<TripScreen> {
     );
   }
 
-  Widget _payBlock({required String title, required String subtitle, required int amount, required VoidCallback onPay, bool showRider = false}) {
+  /// Prominent, professional "Rider found" card (Bolt/Uber style) — the rider is
+  /// what matters most here, so it takes centre stage, with price + pay + cancel.
+  Widget _riderFoundBlock() {
+    final loc = _riderLoc;
+    final name = loc?['riderName'] as String? ?? 'Your rider';
+    final rating = (loc?['rating'] as num?)?.toDouble() ?? 5.0;
+    final ratingCount = (loc?['ratingCount'] as num?)?.toInt() ?? 0;
+    final photo = loc?['riderPhoto'] as String?;
+    final make = loc?['vehicleMake'] as String?;
+    final model = loc?['vehicleModel'] as String?;
+    final color = loc?['vehicleColor'] as String?;
+    final plate = loc?['plateNumber'] as String?;
+    final carParts = [color, make, model].where((s) => s != null && s.isNotEmpty).join(' ');
+
+    return Column(
+      children: [
+        const SizedBox(height: 6),
+        const Text('Rider found!', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.ink)),
+        const SizedBox(height: 16),
+        // Big rider card.
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.black12),
+            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 18, offset: Offset(0, 6))],
+          ),
+          child: Column(
+            children: [
+              CircleAvatar(
+                radius: 48,
+                backgroundColor: AppTheme.surface,
+                backgroundImage: (photo != null && photo.isNotEmpty) ? NetworkImage(photo) : null,
+                child: (photo == null || photo.isEmpty) ? const Icon(Icons.person, color: AppTheme.primary, size: 48) : null,
+              ),
+              const SizedBox(height: 12),
+              Text(name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.ink)),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.star, size: 18, color: Colors.amber),
+                  const SizedBox(width: 4),
+                  Text(rating.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.ink)),
+                  Text(ratingCount > 0 ? '  ·  $ratingCount trips' : '  ·  New rider', style: const TextStyle(color: AppTheme.muted, fontSize: 13)),
+                ],
+              ),
+              if (carParts.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.two_wheeler, size: 18, color: AppTheme.muted),
+                    const SizedBox(width: 6),
+                    Text(carParts, style: const TextStyle(color: AppTheme.ink, fontSize: 14)),
+                  ],
+                ),
+              ],
+              if (plate != null && plate.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(color: AppTheme.ink, borderRadius: BorderRadius.circular(8)),
+                  child: Text(plate, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 2)),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        const Text('Pay 50% now to confirm. The other half is paid when you reach your destination.',
+            textAlign: TextAlign.center, style: TextStyle(color: AppTheme.muted)),
+        const SizedBox(height: 14),
+        Text('KES ${_trip.upfront}', style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: AppTheme.ink)),
+        Text('Total fare: KES ${_trip.fare}', style: const TextStyle(color: AppTheme.muted)),
+        const Spacer(),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: _busy ? null : _payUpfront,
+            child: _busy
+                ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : Text('Pay KES ${_trip.upfront}'),
+          ),
+        ),
+        TextButton(onPressed: _busy ? null : _cancelFlow, child: const Text('Cancel')),
+      ],
+    );
+  }
+
+  Widget _payBlock({required String title, required String subtitle, required int amount, required VoidCallback onPay}) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (showRider && _riderLoc != null) ...[
-          _riderCard(_riderLoc!),
-          const SizedBox(height: 18),
-        ] else
-          const Icon(Icons.account_balance_wallet, size: 60, color: AppTheme.primary),
+        const Icon(Icons.account_balance_wallet, size: 60, color: AppTheme.primary),
         const SizedBox(height: 16),
         Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
@@ -497,8 +594,6 @@ class _TripScreenState extends State<TripScreen> {
                 : Text('Pay KES $amount'),
           ),
         ),
-        if (title == 'Rider found!')
-          TextButton(onPressed: _busy ? null : _cancelFlow, child: const Text('Cancel')),
       ],
     );
   }
@@ -549,5 +644,66 @@ class _TripScreenState extends State<TripScreen> {
     final h = math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(aLat * math.pi / 180) * math.cos(bLat * math.pi / 180) * math.sin(dLng / 2) * math.sin(dLng / 2);
     return 2 * r * math.asin(math.sqrt(h));
+  }
+}
+
+/// Animated radar: concentric expanding/fading rings around a bike icon — a lively
+/// "searching for a rider" indicator while the customer waits.
+class _SearchingRadar extends StatefulWidget {
+  const _SearchingRadar();
+  @override
+  State<_SearchingRadar> createState() => _SearchingRadarState();
+}
+
+class _SearchingRadarState extends State<_SearchingRadar> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 2200))..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 180,
+      height: 180,
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) {
+          final t = _c.value;
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              // three staggered expanding rings
+              for (var i = 0; i < 3; i++) _ring((t + i / 3) % 1.0),
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppTheme.primary,
+                  boxShadow: [BoxShadow(color: AppTheme.primary.withValues(alpha: 0.4), blurRadius: 16)],
+                ),
+                child: const Icon(Icons.two_wheeler, color: Colors.white, size: 38),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _ring(double p) {
+    final size = 72 + p * 108;
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: AppTheme.primary.withValues(alpha: (1 - p) * 0.5), width: 2),
+      ),
+    );
   }
 }
