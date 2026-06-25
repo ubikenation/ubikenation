@@ -1,3 +1,4 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'config/app_config.dart';
 import 'services/api_client.dart';
 import 'services/auth_service.dart';
+import 'services/push_service.dart';
 import 'services/rider_repository.dart';
 import 'theme/app_theme.dart';
 import 'widgets/connectivity_gate.dart';
@@ -22,6 +24,21 @@ Future<void> main() async {
   );
 
   final api = ApiClient();
+
+  // Push notifications (best-effort; never block startup). Riders get "new request"
+  // alerts; token is registered after sign-in.
+  final push = PushService(api);
+  try {
+    await Firebase.initializeApp();
+    await push.init();
+    if (Supabase.instance.client.auth.currentSession != null) {
+      await push.registerToken();
+    }
+    Supabase.instance.client.auth.onAuthStateChange.listen((s) {
+      if (s.session != null) push.registerToken();
+    });
+  } catch (_) {/* Firebase not configured — push disabled, app still runs */}
+
   runApp(
     MultiProvider(
       providers: [
