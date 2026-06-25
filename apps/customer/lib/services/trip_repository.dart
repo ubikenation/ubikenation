@@ -150,6 +150,10 @@ class TripRepository {
   /// Customer passes on the current rider → the system re-searches a different one.
   Future<void> requery(String tripId) => _api.post('/api/trips/$tripId/requery');
 
+  /// Opens a dispute on an active/finished trip (admin then resolves/refunds).
+  Future<void> dispute(String tripId, String reason) =>
+      _api.post('/api/trips/$tripId/dispute', {'reason': reason});
+
   /// Pushes the customer's live GPS so the assigned rider can trace them.
   Future<void> pushLocation(String tripId, double lat, double lng) =>
       _api.post('/api/trips/$tripId/customer-location', {'lat': lat, 'lng': lng});

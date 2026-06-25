@@ -28,6 +28,10 @@ class AppConfig {
 
   static const String googleMapsApiKey = String.fromEnvironment(
     'GOOGLE_MAPS_API_KEY',
-    defaultValue: 'AIzaSyCF1vIAN9RLx7poKLdaiQUl7fOZNrpDS6k',
+    defaultValue: 'AIzaSyBX5fj_ppXGwfexa_1TsK5J6yTrXiaBAes',
   );
+
+  /// Mapbox token (search fallback when Google is unavailable). Passed at build via
+  /// --dart-define=MAPBOX_ACCESS_TOKEN=...
+  static const String mapboxToken = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
 }

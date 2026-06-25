@@ -66,6 +66,10 @@ class RiderRepository {
   /// Rider passes on a request → it's hidden from them and offered to others.
   Future<void> decline(String tripId) => _api.post('/api/trips/$tripId/decline');
 
+  /// Opens a dispute on an active/finished trip (admin reviews and resolves).
+  Future<void> dispute(String tripId, String reason) =>
+      _api.post('/api/trips/$tripId/dispute', {'reason': reason});
+
   /// Confirms the price after accepting: pass no [proposedFare] to take the auto
   /// fare (company keeps 20%), or a higher one to adjust up to +30% (company keeps 25%).
   Future<Map<String, dynamic>> quote(String tripId, {int? proposedFare}) async =>

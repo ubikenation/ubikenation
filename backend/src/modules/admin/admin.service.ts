@@ -98,6 +98,7 @@ const DOC_LABELS: Record<string, string> = {
   profile_photo_url: 'Profile Photo',
   selfie_url: 'Selfie',
   vehicle_photo_url: 'Vehicle Photo',
+  plate_photo_url: 'Number-Plate Photo',
   ownership_proof_url: 'Ownership Proof',
   logbook_url: 'Vehicle Logbook',
   insurance_url: 'Insurance',

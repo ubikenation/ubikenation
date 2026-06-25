@@ -172,6 +172,47 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     });
   }
 
+  static const _problemReasons = [
+    'Customer not at pickup',
+    'Customer behaved badly',
+    'Wrong/unsafe destination',
+    'Payment issue',
+    'Other',
+  ];
+
+  /// Opens a dispute on the active trip — admin reviews and resolves.
+  Future<void> _reportProblem() async {
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
+              child: Align(alignment: Alignment.centerLeft, child: Text('Report a problem', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+            ),
+            ..._problemReasons.map((r) => ListTile(title: Text(r), onTap: () => Navigator.pop(ctx, r))),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (reason == null) return;
+    try {
+      await _repo.dispute(widget.tripId, reason);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Reported. Our team will review this.')),
+        );
+      }
+      await _refresh();
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final trip = _trip;
@@ -290,6 +331,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       case 'in_progress':
         return [
           FilledButton(onPressed: () => _run(() => _repo.completeTrip(widget.tripId)), child: const Text('Reached destination')),
+          const SizedBox(height: 8),
+          TextButton(onPressed: _reportProblem, child: const Text('Report a problem')),
         ];
       case 'awaiting_balance':
         return [

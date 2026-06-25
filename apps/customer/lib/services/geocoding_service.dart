@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 
+import '../config/app_config.dart';
+
 /// A geocoded place result.
 class Place {
   final String name; // full place name, e.g. "Maua, Meru, Kenya"
@@ -17,7 +19,8 @@ class GeocodingService {
   GeocodingService({http.Client? client}) : _http = client ?? http.Client();
   final http.Client _http;
 
-  static const String _token = String.fromEnvironment('MAPBOX_ACCESS_TOKEN');
+  static const String _token = AppConfig.mapboxToken;
+  static const String _googleKey = AppConfig.googleMapsApiKey;
 
   // Bias point: Meru town.
   static const double meruLng = 37.6559;
@@ -81,26 +84,15 @@ class GeocodingService {
     final q = query.trim();
     if (q.isEmpty) return [];
 
-    // 1) Local Meru County matches first (guaranteed coverage).
+    // 1) Local Meru County matches first (guaranteed coverage for tiny towns).
     final local = _meruMatches(q);
 
-    // 2) Mapbox results for the rest of Kenya, Meru-biased.
-    final prox = '${nearLng ?? meruLng},${nearLat ?? meruLat}';
-    final uri = Uri.parse(
-      'https://api.mapbox.com/geocoding/v5/mapbox.places/${Uri.encodeComponent(q)}.json'
-      '?access_token=$_token&country=ke&proximity=$prox&autocomplete=true&limit=8&language=en'
-      '&types=place,locality,neighborhood,address,poi,district',
-    );
-    List<Place> remote = [];
-    try {
-      final res = await _http.get(uri);
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        remote = ((data['features'] as List<dynamic>?) ?? []).map(_toPlace).toList();
-      }
-    } catch (_) {}
+    // 2) Remote search — Google first (most accurate, incl. small towns), then
+    //    Mapbox as a free fallback.
+    List<Place> remote = await _googleSearch(q, nearLat, nearLng);
+    if (remote.isEmpty) remote = await _mapboxSearch(q, nearLat, nearLng);
 
-    // Merge: local first, then Mapbox, de-duplicated by short name.
+    // Merge: local first, then remote, de-duplicated by short name.
     final seen = <String>{for (final p in local) p.shortName.toLowerCase()};
     final merged = [...local];
     for (final p in remote) {
@@ -109,7 +101,93 @@ class GeocodingService {
     return merged.take(8).toList();
   }
 
+  /// Google Places Autocomplete + per-prediction geocoding, Kenya-restricted and
+  /// biased to the user's location. Returns [] if the Places/Geocoding APIs aren't
+  /// enabled on the key (so the caller falls back to Mapbox).
+  Future<List<Place>> _googleSearch(String q, double? nearLat, double? nearLng) async {
+    if (_googleKey.isEmpty) return [];
+    final lat = nearLat ?? meruLat, lng = nearLng ?? meruLng;
+    final auto = Uri.parse(
+      'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+      '?input=${Uri.encodeComponent(q)}&key=$_googleKey&components=country:ke'
+      '&location=$lat,$lng&radius=120000&language=en',
+    );
+    try {
+      final res = await _http.get(auto);
+      if (res.statusCode != 200) return [];
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (data['status'] != 'OK') return [];
+      final preds = ((data['predictions'] as List<dynamic>?) ?? []).take(6).toList();
+      // Resolve coordinates for each prediction (Place Details).
+      final places = await Future.wait(preds.map((p) => _googleDetails(p as Map<String, dynamic>)));
+      return places.whereType<Place>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<Place?> _googleDetails(Map<String, dynamic> pred) async {
+    final placeId = pred['place_id'] as String?;
+    if (placeId == null) return null;
+    final sf = pred['structured_formatting'] as Map<String, dynamic>?;
+    final main = sf?['main_text'] as String? ?? (pred['description'] as String? ?? '');
+    final uri = Uri.parse(
+      'https://maps.googleapis.com/maps/api/place/details/json'
+      '?place_id=$placeId&key=$_googleKey&fields=geometry,name,formatted_address',
+    );
+    try {
+      final res = await _http.get(uri);
+      if (res.statusCode != 200) return null;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final loc = (((data['result'] as Map<String, dynamic>?)?['geometry'] as Map<String, dynamic>?)?['location']) as Map<String, dynamic>?;
+      if (loc == null) return null;
+      return Place(
+        name: pred['description'] as String? ?? main,
+        shortName: main,
+        lat: (loc['lat'] as num).toDouble(),
+        lng: (loc['lng'] as num).toDouble(),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<List<Place>> _mapboxSearch(String q, double? nearLat, double? nearLng) async {
+    if (_token.isEmpty) return [];
+    final prox = '${nearLng ?? meruLng},${nearLat ?? meruLat}';
+    final uri = Uri.parse(
+      'https://api.mapbox.com/geocoding/v5/mapbox.places/${Uri.encodeComponent(q)}.json'
+      '?access_token=$_token&country=ke&proximity=$prox&autocomplete=true&limit=8&language=en'
+      '&types=place,locality,neighborhood,address,poi,district',
+    );
+    try {
+      final res = await _http.get(uri);
+      if (res.statusCode != 200) return [];
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      return ((data['features'] as List<dynamic>?) ?? []).map(_toPlace).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<String?> reverse(double lat, double lng) async {
+    // Google reverse-geocode first, then Mapbox.
+    if (_googleKey.isNotEmpty) {
+      final uri = Uri.parse(
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lng&key=$_googleKey&language=en',
+      );
+      try {
+        final res = await _http.get(uri);
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          final results = (data['results'] as List<dynamic>?) ?? [];
+          if (data['status'] == 'OK' && results.isNotEmpty) {
+            return (results.first as Map<String, dynamic>)['formatted_address'] as String?;
+          }
+        }
+      } catch (_) {}
+    }
+    if (_token.isEmpty) return null;
     final uri = Uri.parse(
       'https://api.mapbox.com/geocoding/v5/mapbox.places/$lng,$lat.json'
       '?access_token=$_token&country=ke&limit=1&language=en'

@@ -35,6 +35,8 @@ class _TripScreenState extends State<TripScreen> {
   Map<String, dynamic>? _riderLoc;
 
   static const _trackStatuses = {'rider_assigned', 'arrived', 'in_progress'};
+  // Statuses where a rider is assigned and we can show who's coming (incl. before payment).
+  static const _riderKnownStatuses = {'awaiting_payment', 'rider_assigned', 'arrived', 'in_progress', 'awaiting_balance'};
 
   @override
   void initState() {
@@ -58,7 +60,7 @@ class _TripScreenState extends State<TripScreen> {
     try {
       final t = await repo.getTrip(_trip.id);
       if (mounted) setState(() => _trip = t);
-      if (_trackStatuses.contains(t.status)) {
+      if (_riderKnownStatuses.contains(t.status)) {
         final loc = await repo.riderLocation(_trip.id);
         if (mounted) setState(() => _riderLoc = loc);
       }
@@ -159,6 +161,49 @@ class _TripScreenState extends State<TripScreen> {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not cancel: $e')));
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  static const _problemReasons = [
+    'Rider behaved badly',
+    'Took the wrong route',
+    'Charged incorrectly',
+    'Safety concern',
+    'Item damaged / wrong (errand)',
+    'Other',
+  ];
+
+  /// Opens a dispute on an active/finished trip — admin reviews and can refund.
+  Future<void> _reportProblem() async {
+    final repo = context.read<TripRepository>();
+    final reason = await showModalBottomSheet<String>(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
+              child: Align(alignment: Alignment.centerLeft, child: Text('Report a problem', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+            ),
+            ..._problemReasons.map((r) => ListTile(title: Text(r), onTap: () => Navigator.pop(ctx, r))),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (reason == null) return;
+    try {
+      await repo.dispute(_trip.id, reason);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Thanks — our team will review this and get back to you.')),
+        );
+      }
+      await _refresh();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not report: $e')));
     }
   }
 
@@ -267,7 +312,14 @@ class _TripScreenState extends State<TripScreen> {
                     child: const Text('Cancel ride'),
                   ),
                 ),
-              ],
+              ] else
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: _reportProblem,
+                    child: const Text('Report a problem'),
+                  ),
+                ),
             ],
           ),
         ),
@@ -368,9 +420,10 @@ class _TripScreenState extends State<TripScreen> {
       case 'awaiting_payment':
         return _payBlock(
           title: 'Rider found!',
-          subtitle: 'Pay 50% now to confirm. The other half is paid when you reach your destination.',
+          subtitle: 'This is your rider. Pay 50% now to confirm — the other half is paid when you reach your destination.',
           amount: _trip.upfront,
           onPay: _payUpfront,
+          showRider: true,
         );
       case 'rider_assigned':
       case 'arrived':
@@ -418,11 +471,15 @@ class _TripScreenState extends State<TripScreen> {
     );
   }
 
-  Widget _payBlock({required String title, required String subtitle, required int amount, required VoidCallback onPay}) {
+  Widget _payBlock({required String title, required String subtitle, required int amount, required VoidCallback onPay, bool showRider = false}) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Icon(Icons.account_balance_wallet, size: 60, color: AppTheme.primary),
+        if (showRider && _riderLoc != null) ...[
+          _riderCard(_riderLoc!),
+          const SizedBox(height: 18),
+        ] else
+          const Icon(Icons.account_balance_wallet, size: 60, color: AppTheme.primary),
         const SizedBox(height: 16),
         Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
@@ -480,6 +537,7 @@ class _TripScreenState extends State<TripScreen> {
         ),
         const Spacer(),
         FilledButton(onPressed: _submitRating, child: const Text('Submit & Finish')),
+        TextButton(onPressed: _reportProblem, child: const Text('Report a problem')),
       ],
     );
   }
