@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabase';
 const NAV = [
   { href: '/aaddmmiinn', label: 'Overview', icon: '📊' },
   { href: '/aaddmmiinn/riders', label: 'Verifications', icon: '🪪' },
+  { href: '/aaddmmiinn/customers', label: 'Customers', icon: '👥' },
   { href: '/aaddmmiinn/founding', label: 'Founding Riders', icon: '🎖️' },
   { href: '/aaddmmiinn/trips', label: 'Trips', icon: '🛣️' },
   { href: '/aaddmmiinn/payouts', label: 'Payouts', icon: '💸' },

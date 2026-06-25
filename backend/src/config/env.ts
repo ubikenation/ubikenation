@@ -21,6 +21,10 @@ const schema = z.object({
 
   REDIS_URL: z.string().optional().default(''),
 
+  // ZEGOCLOUD real-time voice calls.
+  ZEGO_APP_ID: z.coerce.number().optional().default(0),
+  ZEGO_SERVER_SECRET: z.string().optional().default(''),
+
   // Firebase service account for FCM push (optional; push is a no-op until provided).
   // Provide EITHER a path to the JSON file OR the raw JSON pasted as one env var
   // (handy on Render/Vercel where mounting a file is awkward).

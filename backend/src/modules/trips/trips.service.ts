@@ -321,6 +321,11 @@ export async function completeTrip(tripId: string, riderProfileId: string) {
   const funded = esc && esc.status === 'held' && esc.amount >= (full?.final_fare ?? Infinity);
   if (!funded) {
     await supabaseAdmin.from('trips').update({ status: 'awaiting_balance' }).eq('id', tripId);
+    void notifyProfiles([trip.customer_id], {
+      title: 'You\'ve arrived',
+      body: 'Please pay the remaining balance to finish your trip.',
+      data: { type: 'pay_balance', tripId },
+    });
     return { status: 'awaiting_balance', balanceDue: true };
   }
 

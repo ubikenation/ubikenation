@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { ErrorBox } from '../page';
+import { DeleteButton, ErrorBox } from '../page';
 
 interface Founder {
   id: string;
@@ -89,12 +89,13 @@ export default function FoundingPage() {
                   <th className="px-4 py-3 font-medium">Type</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Registered</th>
+                  <th className="px-4 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
                 {program.founders.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-slate-400">No founding riders yet.</td>
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-400">No founding riders yet.</td>
                   </tr>
                 )}
                 {program.founders.map((f) => (
@@ -103,6 +104,9 @@ export default function FoundingPage() {
                     <td className="px-4 py-3 capitalize">{f.kind}</td>
                     <td className="px-4 py-3 capitalize">{f.status.replace('_', ' ')}</td>
                     <td className="px-4 py-3 text-slate-500">{new Date(f.created_at).toLocaleDateString()}</td>
+                    <td className="px-4 py-3">
+                      <DeleteButton onDelete={async () => { await api.del(`/api/admin/riders/${f.id}`); load(); }} />
+                    </td>
                   </tr>
                 ))}
               </tbody>

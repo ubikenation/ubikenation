@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { ErrorBox } from '../page';
+import { DeleteButton, ErrorBox } from '../page';
 
 interface Trip {
   id: string;
@@ -27,8 +27,12 @@ export default function TripsPage() {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  function reload() {
     api.get('/api/admin/trips').then((d) => setTrips(d as Trip[])).catch((e) => setError(e.message));
+  }
+
+  useEffect(() => {
+    reload();
   }, []);
 
   return (
@@ -47,12 +51,13 @@ export default function TripsPage() {
               <th className="px-4 py-3 font-medium">Fare</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">When</th>
+              <th className="px-4 py-3 font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {trips.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-400">No trips yet.</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">No trips yet.</td>
               </tr>
             )}
             {trips.map((t) => (
@@ -66,6 +71,9 @@ export default function TripsPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-500">{new Date(t.created_at).toLocaleString()}</td>
+                <td className="px-4 py-3">
+                  <DeleteButton onDelete={async () => { await api.del(`/api/admin/trips/${t.id}`); reload(); }} />
+                </td>
               </tr>
             ))}
           </tbody>

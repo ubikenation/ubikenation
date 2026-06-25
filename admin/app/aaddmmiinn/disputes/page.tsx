@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { ErrorBox } from '../page';
+import { DeleteButton, ErrorBox } from '../page';
 
 interface Dispute {
   id: string;
@@ -86,6 +86,7 @@ export default function DisputesPage() {
                     >
                       Resolve (no refund)
                     </button>
+                    <DeleteButton onDelete={async () => { await api.del(`/api/admin/trips/${d.id}`); reload(); }} />
                   </div>
                 </td>
               </tr>

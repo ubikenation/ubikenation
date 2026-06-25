@@ -48,6 +48,31 @@ export default function OverviewPage() {
   );
 }
 
+/** Small reusable delete action with a confirm prompt. */
+export function DeleteButton({ onDelete, label = 'Delete' }: { onDelete: () => Promise<void>; label?: string }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      onClick={async () => {
+        if (!window.confirm('Delete this permanently? This cannot be undone.')) return;
+        setBusy(true);
+        try {
+          await onDelete();
+        } catch (e) {
+          window.alert((e as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+      disabled={busy}
+      className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+      title="Delete"
+    >
+      {busy ? '…' : `🗑 ${label}`}
+    </button>
+  );
+}
+
 export function ErrorBox({ message }: { message: string }) {
   return (
     <div className="mb-6 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">

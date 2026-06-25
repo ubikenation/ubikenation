@@ -141,6 +141,41 @@ export async function listTrips(limit = 50) {
   return data ?? [];
 }
 
+/** All customers with contact details + their trip counts, for the admin. */
+export async function listCustomers(limit = 300) {
+  const { data } = await supabaseAdmin
+    .from('profiles')
+    .select('id, full_name, email, phone, mpesa_number, created_at')
+    .eq('role', 'customer')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  return data ?? [];
+}
+
+/** Deletes a rider record (verification / founding). Frees the founding slot too.
+ *  Removes its payouts first (FK restrict), the rest cascade. */
+export async function deleteRider(riderId: string) {
+  await supabaseAdmin.from('payouts').delete().eq('rider_id', riderId);
+  const { error } = await supabaseAdmin.from('riders').delete().eq('id', riderId);
+  if (error) throw new AppError(409, `could not delete rider: ${error.message}`);
+  return { deleted: true };
+}
+
+/** Deletes a trip (escrow/chat/ratings cascade; payments/payouts detach). */
+export async function deleteTrip(tripId: string) {
+  await supabaseAdmin.from('payouts').delete().eq('trip_id', tripId);
+  const { error } = await supabaseAdmin.from('trips').delete().eq('id', tripId);
+  if (error) throw new AppError(409, `could not delete trip: ${error.message}`);
+  return { deleted: true };
+}
+
+/** Deletes a commuter plan. */
+export async function deletePlan(planId: string) {
+  const { error } = await supabaseAdmin.from('commuter_plans').delete().eq('id', planId);
+  if (error) throw new AppError(409, `could not delete plan: ${error.message}`);
+  return { deleted: true };
+}
+
 export async function listPayouts(status?: string) {
   let q = supabaseAdmin
     .from('payouts')

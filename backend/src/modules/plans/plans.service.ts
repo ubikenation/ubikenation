@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../../config/supabase';
 import { conflict, forbidden, notFound } from '../../utils/http';
 import { estimateErrandFare } from '../fare/fare.service';
 import { createTrip } from '../trips/trips.service';
+import { notifyProfiles } from '../notifications/notification.service';
 import type { CommuterFrequency } from '../../types/domain';
 
 export interface CreatePlanInput {
@@ -137,7 +138,16 @@ export async function releaseDueScheduledTrips(now = new Date()) {
     .update({ status: 'searching' })
     .eq('status', 'scheduled')
     .lte('scheduled_for', now.toISOString())
-    .select('id');
+    .select('id, customer_id');
+  // Remind each customer their scheduled ride is now being matched (they'll pay once
+  // a rider is found).
+  for (const t of data ?? []) {
+    void notifyProfiles([t.customer_id], {
+      title: 'Your scheduled ride is starting',
+      body: 'We\'re finding you a rider now — get ready to confirm and pay.',
+      data: { type: 'scheduled_ready', tripId: t.id },
+    });
+  }
   return { released: data?.length ?? 0 };
 }
 

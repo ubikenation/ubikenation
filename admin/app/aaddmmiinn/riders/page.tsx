@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { ErrorBox } from '../page';
+import { DeleteButton, ErrorBox } from '../page';
 
 interface Rider {
   id: string;
@@ -143,6 +143,7 @@ export default function RidersPage() {
                         </button>
                       </>
                     )}
+                    <DeleteButton onDelete={async () => { await api.del(`/api/admin/riders/${r.id}`); load(); }} />
                   </div>
                 </td>
               </tr>

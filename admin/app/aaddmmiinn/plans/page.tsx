@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { ErrorBox } from '../page';
+import { DeleteButton, ErrorBox } from '../page';
 
 interface Plan {
   id: string;
@@ -27,8 +27,12 @@ export default function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  function reload() {
     api.get('/api/admin/plans').then((d) => setPlans(d as Plan[])).catch((e) => setError(e.message));
+  }
+
+  useEffect(() => {
+    reload();
   }, []);
 
   const active = plans.filter((p) => p.status === 'active').length;
@@ -50,12 +54,13 @@ export default function PlansPage() {
               <th className="px-4 py-3 font-medium">Fare/run</th>
               <th className="px-4 py-3 font-medium">Next run</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {plans.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">No commuter plans yet.</td>
+                <td colSpan={7} className="px-4 py-8 text-center text-slate-400">No commuter plans yet.</td>
               </tr>
             )}
             {plans.map((p) => (
@@ -69,6 +74,9 @@ export default function PlansPage() {
                   <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${COLORS[p.status] ?? 'bg-slate-100 text-slate-600'}`}>
                     {p.status}
                   </span>
+                </td>
+                <td className="px-4 py-3">
+                  <DeleteButton onDelete={async () => { await api.del(`/api/admin/plans/${p.id}`); reload(); }} />
                 </td>
               </tr>
             ))}

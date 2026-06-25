@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { handler, ok } from '../../utils/http';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import {
-  approveRider, getDashboardStats, getFoundingProgram, getRiderDocuments, listAllPlans,
-  listDisputes, listPayouts, listRiders, listTrips, refundDispute, rejectRider,
-  resolveDispute, setFoundingProgram,
+  approveRider, deletePlan, deleteRider, deleteTrip, getDashboardStats, getFoundingProgram,
+  getRiderDocuments, listAllPlans, listCustomers, listDisputes, listPayouts, listRiders,
+  listTrips, refundDispute, rejectRider, resolveDispute, setFoundingProgram,
 } from './admin.service';
 import { markPayoutPaid, processPayout } from '../payments/payouts.service';
 
@@ -44,6 +44,15 @@ adminRouter.patch('/founding', handler(async (req, res) => {
 }));
 
 adminRouter.get('/trips', handler(async (_req, res) => ok(res, await listTrips())));
+
+// GET /api/admin/customers — all customers with contact details.
+adminRouter.get('/customers', handler(async (_req, res) => ok(res, await listCustomers())));
+
+// DELETE endpoints — remove a rider (verification/founding), a trip (incl. disputes),
+// or a commuter plan.
+adminRouter.delete('/riders/:id', handler(async (req, res) => ok(res, await deleteRider(req.params.id))));
+adminRouter.delete('/trips/:id', handler(async (req, res) => ok(res, await deleteTrip(req.params.id))));
+adminRouter.delete('/plans/:id', handler(async (req, res) => ok(res, await deletePlan(req.params.id))));
 
 adminRouter.get('/payouts', handler(async (req, res) => {
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
