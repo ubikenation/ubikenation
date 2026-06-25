@@ -44,7 +44,7 @@ export async function findNearbyRiders(
     .not('last_lat', 'is', null)
     .not('last_lng', 'is', null);
 
-  return (data ?? [])
+  const inRange = (data ?? [])
     .map((r) => ({
       riderId: r.id as string,
       profileId: r.profile_id as string,
@@ -53,16 +53,14 @@ export async function findNearbyRiders(
       ratingAvg: Number(r.rating_avg ?? 5),
       distanceKm: haversineKm(pickupLat, pickupLng, r.last_lat as number, r.last_lng as number),
     }))
-    .filter((r) => r.distanceKm <= radiusKm)
-    .sort((a, b) => a.distanceKm - b.distanceKm)
-    .slice(0, limit);
+    .filter((r) => r.distanceKm <= radiusKm);
+  // Closer riders are more likely to be picked first (but not guaranteed) so a
+  // re-search can still reach a different rider.
+  return weightedShuffleByDistance(inRange, (r) => r.distanceKm).slice(0, limit);
 }
 
 /**
- * Randomly shuffles a list (Fisher–Yates). Within the 5 km radius every nearby
- * rider is equally eligible, so we surface requests in a random order rather than
- * strictly nearest-first. That way, if the customer passes on one rider, a re-search
- * is likely to reach a different rider next.
+ * Randomly shuffles a list (Fisher–Yates). Kept for uniform-random needs.
  */
 export function shuffle<T>(items: readonly T[]): T[] {
   const a = [...items];
@@ -71,4 +69,22 @@ export function shuffle<T>(items: readonly T[]): T[] {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+/**
+ * Distance-weighted random ordering: closer items are MORE likely to come first,
+ * but the order is still randomised so re-requests vary. Uses the Efraimidis–Spirakis
+ * weighted-sampling key `u^(1/w)` with weight `w = 1/distance` (a 50 m floor avoids
+ * division by zero); larger keys sort first, so a nearer rider tends to win.
+ */
+export function weightedShuffleByDistance<T>(items: readonly T[], distanceOf: (item: T) => number): T[] {
+  return items
+    .map((item) => {
+      const d = Math.max(distanceOf(item), 0.05); // 50 m floor
+      const weight = 1 / d; // closer → larger weight
+      const key = Math.pow(Math.random(), 1 / weight);
+      return { item, key };
+    })
+    .sort((a, b) => b.key - a.key)
+    .map((x) => x.item);
 }

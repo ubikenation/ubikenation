@@ -5,7 +5,7 @@ import { releaseEscrow, refundEscrow } from '../payments/escrow.service';
 import {
   COMMISSION_ADJUSTED, COMMISSION_NO_ADJUST, VEHICLE_CLASS_KIND, type VehicleClass,
 } from '../../types/domain';
-import { findNearbyRiders, haversineKm, shuffle } from '../matching/matching.service';
+import { findNearbyRiders, haversineKm, weightedShuffleByDistance } from '../matching/matching.service';
 import { getRoute } from '../routing/routing.service';
 import { notifyProfiles } from '../notifications/notification.service';
 
@@ -499,14 +499,15 @@ export async function listAvailableTrips(riderProfileId: string) {
     .map(({ declined_rider_ids: _omit, ...t }) => t);
   if (rider.last_lat == null || rider.last_lng == null) return list;
 
-  // Surface only pickups within 5 km. Every rider in range is equally eligible,
-  // so the order is randomised — a customer who passes on one rider is likely to
-  // reach a different rider on the re-search.
+  // Surface only pickups within 5 km, ordered by a distance-weighted shuffle: the
+  // closer the pickup is to this rider, the more likely it appears near the top —
+  // but still randomised, so a customer who passes on one rider is likely to reach
+  // a different rider on the re-search.
   const RADIUS_KM = 5;
   const inRange = list
     .map((t) => ({ ...t, pickupDistanceKm: haversineKm(rider.last_lat!, rider.last_lng!, t.pickup_lat, t.pickup_lng) }))
     .filter((t) => t.pickupDistanceKm <= RADIUS_KM);
-  return shuffle(inRange);
+  return weightedShuffleByDistance(inRange, (t) => t.pickupDistanceKm);
 }
 
 /** The authenticated customer's own trips (history). */

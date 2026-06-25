@@ -4,7 +4,7 @@
  * distance, and random rider ordering. Run: npx ts-node scripts/logic-tests.ts */
 import { splitCommission } from '../src/modules/payments/commission';
 import { validateAdjustment } from '../src/modules/fare/fare.service';
-import { haversineKm, shuffle } from '../src/modules/matching/matching.service';
+import { haversineKm, shuffle, weightedShuffleByDistance } from '../src/modules/matching/matching.service';
 import { COMMISSION_NO_ADJUST, COMMISSION_ADJUSTED } from '../src/types/domain';
 import { env } from '../src/config/env';
 
@@ -103,6 +103,40 @@ console.log('\n-- 6) Random rider ordering (so re-search reaches a different rid
   }
   ok(`Shuffle actually reorders (${reordered}/200 runs differed)`, reordered > 150);
   ok('Shuffle does not mutate the input', base.join(',') === '0,1,2,3,4,5,6,7,8,9');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n-- 7) Distance-weighted matching: CLOSER riders selected more often --');
+{
+  // 5 riders within 5km at increasing distances. Run the weighted selection many
+  // times and count how often each is picked FIRST.
+  const riders = [
+    { id: 'A', distanceKm: 0.3 },
+    { id: 'B', distanceKm: 1.0 },
+    { id: 'C', distanceKm: 2.0 },
+    { id: 'D', distanceKm: 3.5 },
+    { id: 'E', distanceKm: 4.8 },
+  ];
+  const N = 5000;
+  const firstCount: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, E: 0 };
+  let multisetOk = true;
+  for (let i = 0; i < N; i++) {
+    const order = weightedShuffleByDistance(riders, (r) => r.distanceKm);
+    firstCount[order[0].id]++;
+    if (order.length !== riders.length) multisetOk = false;
+  }
+  const pct = (id: string) => ((firstCount[id] / N) * 100).toFixed(1);
+  console.log(`   first-picked %:  A(0.3km)=${pct('A')}  B(1km)=${pct('B')}  C(2km)=${pct('C')}  D(3.5km)=${pct('D')}  E(4.8km)=${pct('E')}`);
+
+  ok('Preserves all riders every run', multisetOk);
+  ok('Nearest rider (0.3km) is selected most often', firstCount.A === Math.max(...Object.values(firstCount)));
+  ok('Selection frequency DECREASES with distance (A>B>C>D>E)',
+    firstCount.A > firstCount.B && firstCount.B > firstCount.C && firstCount.C > firstCount.D && firstCount.D > firstCount.E);
+  ok('Farthest rider (4.8km) is selected least often', firstCount.E === Math.min(...Object.values(firstCount)));
+  // Not deterministic: the nearest does NOT always win (a farther rider sometimes does),
+  // so a re-request can reach a different rider.
+  ok('Still random — nearest does not ALWAYS win (variety for re-requests)', firstCount.A < N);
+  ok('Even a far rider gets picked sometimes (every rider reachable)', firstCount.E > 0);
 }
 
 console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
