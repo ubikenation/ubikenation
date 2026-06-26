@@ -12,10 +12,10 @@ interface AppDownload {
 }
 
 const APPS: AppDownload[] = [
-  { name: 'Passenger App', desc: 'Book bikes, cars & errands', file: 'ubike-customer.apk', icon: User, accent: 'text-brand' },
-  { name: 'Bike Rider App', desc: 'Earn on a bike', file: 'ubike-bike-rider.apk', icon: Bike, accent: 'text-leaf' },
-  { name: 'Car Rider App', desc: 'Earn with your car', file: 'ubike-car-rider.apk', icon: Car, accent: 'text-brand' },
-  { name: 'Errands Rider App', desc: 'Earn running errands', file: 'ubike-errands-rider.apk', icon: ShoppingBag, accent: 'text-leaf' },
+  { name: 'U-bike — Passenger App', desc: 'Book bikes, cars & errands', file: 'U-bike.apk', icon: User, accent: 'text-brand' },
+  { name: 'Piki — Bike Rider App', desc: 'Earn on a bike', file: 'Piki.apk', icon: Bike, accent: 'text-leaf' },
+  { name: 'Cruze — Car Rider App', desc: 'Earn with your car', file: 'Cruze.apk', icon: Car, accent: 'text-brand' },
+  { name: 'ErrandX — Errands Rider App', desc: 'Earn running errands', file: 'ErrandX.apk', icon: ShoppingBag, accent: 'text-leaf' },
 ];
 
 export default function DownloadModal({ open, onClose }: { open: boolean; onClose: () => void }) {
