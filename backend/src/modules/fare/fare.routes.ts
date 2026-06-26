@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { handler, ok } from '../../utils/http';
 import { requireAuth } from '../../middleware/auth';
-import { calculateFare, estimateErrandFare, validateAdjustment } from './fare.service';
+import { calculateFare, estimateAllFares, estimateErrandFare, validateAdjustment } from './fare.service';
 
 export const fareRouter = Router();
 
@@ -29,6 +29,22 @@ fareRouter.post(
       upfront: fare.upfrontAmount,
       balance: fare.balanceAmount,
     });
+  }),
+);
+
+// POST /api/fare/estimate-all — price for EVERY vehicle type for a route (real
+// distance via Directions). Lets the customer compare options before choosing.
+fareRouter.post(
+  '/estimate-all',
+  requireAuth,
+  handler(async (req, res) => {
+    const { pickup, dropoff } = z
+      .object({
+        pickup: z.object({ lat: z.number(), lng: z.number() }),
+        dropoff: z.object({ lat: z.number(), lng: z.number() }),
+      })
+      .parse(req.body);
+    ok(res, await estimateAllFares(pickup, dropoff));
   }),
 );
 

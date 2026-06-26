@@ -163,17 +163,18 @@ class _BookingScreenState extends State<BookingScreen> {
   double get _durationMin => _distanceKm / 22 * 60;
 
   Future<void> _loadFares() async {
+    if (_pickup == null || _dropoff == null) return;
     try {
-      final repo = context.read<TripRepository>();
-      final d = double.parse(_distanceKm.toStringAsFixed(2));
-      final t = double.parse(_durationMin.toStringAsFixed(1));
-      final entries = await Future.wait(ServiceCategory.all.map((c) async {
-        final q = await repo.estimateFare(vehicleClass: c.id, distanceKm: d, durationMin: t);
-        return MapEntry(c.id, q.fare);
-      }));
+      // One call → price for every vehicle type, based on the real driving route.
+      final fares = await context.read<TripRepository>().estimateAllFares(
+            pickupLat: _pickup!.lat,
+            pickupLng: _pickup!.lng,
+            dropoffLat: _dropoff!.lat,
+            dropoffLng: _dropoff!.lng,
+          );
       if (!mounted) return;
       setState(() {
-        _fares = Map.fromEntries(entries);
+        _fares = fares;
         _loadingFares = false;
       });
     } catch (e) {

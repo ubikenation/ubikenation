@@ -19,6 +19,24 @@ class TripRepository {
     return FareQuote.fromJson(data as Map<String, dynamic>);
   }
 
+  /// One call → the price for every vehicle type for a from→to route (real distance).
+  /// Returns a map of vehicleClass → fare (KES).
+  Future<Map<String, int>> estimateAllFares({
+    required double pickupLat,
+    required double pickupLng,
+    required double dropoffLat,
+    required double dropoffLng,
+  }) async {
+    final d = await _api.post('/api/fare/estimate-all', {
+      'pickup': {'lat': pickupLat, 'lng': pickupLng},
+      'dropoff': {'lat': dropoffLat, 'lng': dropoffLng},
+    }) as Map<String, dynamic>;
+    final fares = (d['fares'] as List<dynamic>?) ?? [];
+    return {
+      for (final f in fares) (f as Map<String, dynamic>)['vehicleClass'] as String: (f['fare'] as num).toInt(),
+    };
+  }
+
   Future<Trip> createTrip({
     required String tripType,
     required String vehicleClass,

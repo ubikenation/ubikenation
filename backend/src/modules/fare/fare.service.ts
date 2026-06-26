@@ -1,6 +1,8 @@
 import { env } from '../../config/env';
 import { supabaseAdmin } from '../../config/supabase';
 import { AppError, badRequest } from '../../utils/http';
+import { haversineKm } from '../matching/matching.service';
+import { getRoute } from '../routing/routing.service';
 import type { VehicleClass } from '../../types/domain';
 
 export interface FareInputs {
@@ -77,6 +79,36 @@ export async function calculateFare(input: FareInputs): Promise<FareBreakdown> {
       minimumApplied,
     },
   };
+}
+
+/**
+ * Fare estimates for EVERY ride vehicle class for a from→to route, computed once from
+ * the real driving distance (Google Directions, falling back to straight-line). Used by
+ * the customer's vehicle-picker so each option shows its price before they choose.
+ */
+export async function estimateAllFares(
+  pickup: { lat: number; lng: number },
+  dropoff: { lat: number; lng: number },
+) {
+  let distanceKm = haversineKm(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng);
+  let durationMin = (distanceKm / 22) * 60;
+  const route = await getRoute(pickup.lat, pickup.lng, dropoff.lat, dropoff.lng);
+  if (route) {
+    distanceKm = route.distanceKm;
+    durationMin = route.durationMin;
+  }
+
+  const classes: VehicleClass[] = ['standard_bike', 'electric_bike', 'economy', 'comfort', 'suv', 'errands'];
+  const fares = [];
+  for (const vehicleClass of classes) {
+    try {
+      const f = await calculateFare({ vehicleClass, distanceKm, durationMin });
+      fares.push({ vehicleClass, fare: f.baseFare, upfront: f.upfrontAmount, balance: f.balanceAmount });
+    } catch {
+      /* skip a class with no config */
+    }
+  }
+  return { distanceKm: Math.round(distanceKm * 100) / 100, durationMin: Math.round(durationMin), fares };
 }
 
 export interface AdjustmentRequest {
