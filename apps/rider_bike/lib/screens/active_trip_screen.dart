@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 import '../services/rider_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
+import 'call_screen.dart';
+import 'chat_screen.dart';
 
 /// The accepted-trip workflow: confirm the price (accept the auto fare, or nudge it
 /// up to +30% — no reason needed) → the customer pays 50% → trace the customer to
@@ -323,6 +325,30 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
             ],
           ),
         ),
+        if (_tripActive) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(tripId: widget.tripId))),
+                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                  label: const Text('Chat'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => CallScreen(tripId: widget.tripId, peerName: (_custLoc?['customerName'] as String?) ?? 'Customer'),
+                  )),
+                  icon: const Icon(Icons.call, size: 18),
+                  label: const Text('Call'),
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(12),

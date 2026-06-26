@@ -10,6 +10,7 @@ import '../models/models.dart';
 import '../services/trip_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_map.dart';
+import 'call_screen.dart';
 import 'chat_screen.dart';
 import 'paystack_webview.dart';
 
@@ -401,25 +402,7 @@ class _TripScreenState extends State<TripScreen> {
   }
 
   void _placeCall(String name) {
-    // Voice calling is wired to the trip but the audio channel is a placeholder
-    // for now (ZEGO/WebRTC integration is a later pass).
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Calling $name…'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(radius: 30, backgroundColor: AppTheme.surface, child: Icon(Icons.call, color: AppTheme.primary, size: 28)),
-            SizedBox(height: 14),
-            Text('In-app voice calling is coming soon. Please use chat in the meantime.', textAlign: TextAlign.center),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('End')),
-        ],
-      ),
-    );
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => CallScreen(tripId: _trip.id, peerName: name)));
   }
 
   // -------- Non-tracking states --------
