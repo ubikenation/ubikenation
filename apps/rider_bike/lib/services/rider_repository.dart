@@ -37,12 +37,17 @@ class RiderRepository {
     return (d as Map<String, dynamic>)['authorizationUrl'] as String;
   }
 
-  /// Returns the rider record for this account (bike kind), or null if none yet.
+  /// Returns the rider record for this account (matching this app's kind), or null if
+  /// none yet. Retries once — right after sign-in the auth token can lag a beat, which
+  /// would otherwise look like "no record" and wrongly send a verified rider to register.
   Future<RiderRecord?> myStatus() async {
-    final d = await _api.get('/api/riders/me') as List<dynamic>;
-    for (final row in d) {
-      final m = row as Map<String, dynamic>;
-      if (m['kind'] == kind) return RiderRecord.fromJson(m);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final d = await _api.get('/api/riders/me') as List<dynamic>;
+      for (final row in d) {
+        final m = row as Map<String, dynamic>;
+        if (m['kind'] == kind) return RiderRecord.fromJson(m);
+      }
+      if (attempt == 0) await Future<void>.delayed(const Duration(milliseconds: 700));
     }
     return null;
   }

@@ -392,10 +392,13 @@ export async function cancelTrip(tripId: string, customerId: string, reason?: st
     .single();
   if (!trip) throw notFound('trip not found');
   if (trip.customer_id !== customerId) throw forbidden();
-  if (['in_progress', 'awaiting_balance', 'completed'].includes(trip.status)) {
-    throw conflict('trip already started; open a dispute instead');
+  // Once you've met the rider (arrived) or the ride has started, you can't cancel —
+  // open a dispute instead. Cancel is only allowed while still searching or the rider
+  // is on the way (before arrival).
+  if (['arrived', 'in_progress', 'awaiting_balance', 'completed'].includes(trip.status)) {
+    throw conflict('the rider has already arrived; open a dispute instead of cancelling');
   }
-  await refundEscrow(tripId).catch(() => undefined); // immediate refund; no-op if nothing held
+  await refundEscrow(tripId).catch(() => undefined); // immediate refund to wallet; no-op if nothing held
   await supabaseAdmin
     .from('trips')
     .update({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancel_reason: reason })

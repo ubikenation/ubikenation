@@ -37,10 +37,13 @@ class RiderRepository {
 
   /// Returns the rider record for this account (bike kind), or null if none yet.
   Future<RiderRecord?> myStatus() async {
-    final d = await _api.get('/api/riders/me') as List<dynamic>;
-    for (final row in d) {
-      final m = row as Map<String, dynamic>;
-      if (m['kind'] == kind) return RiderRecord.fromJson(m);
+    for (var attempt = 0; attempt < 2; attempt++) {
+      final d = await _api.get('/api/riders/me') as List<dynamic>;
+      for (final row in d) {
+        final m = row as Map<String, dynamic>;
+        if (m['kind'] == kind) return RiderRecord.fromJson(m);
+      }
+      if (attempt == 0) await Future<void>.delayed(const Duration(milliseconds: 700));
     }
     return null;
   }

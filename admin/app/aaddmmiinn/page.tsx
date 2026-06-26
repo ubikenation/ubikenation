@@ -8,6 +8,7 @@ interface Stats {
   activeRiders: number;
   tripsToday: number;
   revenueToday: number;
+  companyRevenueToday: number;
   pendingVerifications: number;
 }
 
@@ -23,7 +24,8 @@ export default function OverviewPage() {
     { label: 'Total Users', value: stats?.totalUsers, accent: 'text-sky-600' },
     { label: 'Active Riders (online)', value: stats?.activeRiders, accent: 'text-emerald-600' },
     { label: 'Trips Today', value: stats?.tripsToday, accent: 'text-indigo-600' },
-    { label: 'Revenue Today', value: stats ? `KES ${stats.revenueToday.toLocaleString()}` : undefined, accent: 'text-amber-600' },
+    { label: 'Gross Volume Today', value: stats ? `KES ${stats.revenueToday.toLocaleString()}` : undefined, accent: 'text-amber-600' },
+    { label: 'Company Earnings Today (20/25% cut)', value: stats ? `KES ${stats.companyRevenueToday.toLocaleString()}` : undefined, accent: 'text-emerald-600' },
     { label: 'Pending Verifications', value: stats?.pendingVerifications, accent: 'text-rose-600' },
   ];
 

@@ -5,11 +5,12 @@ import { applyWallet } from '../wallet/wallet.service';
 
 /** Aggregate counters for the dashboard header + analytics. */
 export async function getDashboardStats() {
-  const [users, riders, tripsToday, revenue, pendingVerifs] = await Promise.all([
+  const [users, riders, tripsToday, revenue, companyRevenue, pendingVerifs] = await Promise.all([
     countRows('profiles'),
     countRows('riders', (q) => q.eq('status', 'activated').eq('is_online', true)),
     countRows('trips', (q) => q.gte('created_at', startOfTodayISO())),
     sumCompletedRevenue(),
+    sumCompanyRevenue(),
     countRows('riders', (q) => q.eq('status', 'under_review')),
   ]);
 
@@ -18,6 +19,7 @@ export async function getDashboardStats() {
     activeRiders: riders,
     tripsToday,
     revenueToday: revenue,
+    companyRevenueToday: companyRevenue,
     pendingVerifications: pendingVerifs,
   };
 }
@@ -282,6 +284,16 @@ async function sumCompletedRevenue(): Promise<number> {
     .eq('status', 'completed')
     .gte('completed_at', startOfTodayISO());
   return (data ?? []).reduce((s, t) => s + (t.final_fare ?? 0), 0);
+}
+
+/** The company's commission take today = Σ fare × its rate (20% normal, 25% adjusted). */
+async function sumCompanyRevenue(): Promise<number> {
+  const { data } = await supabaseAdmin
+    .from('trips')
+    .select('final_fare, commission_rate')
+    .eq('status', 'completed')
+    .gte('completed_at', startOfTodayISO());
+  return (data ?? []).reduce((s, t) => s + Math.round((t.final_fare ?? 0) * (t.commission_rate != null ? Number(t.commission_rate) : 0.2)), 0);
 }
 function startOfTodayISO(): string {
   const d = new Date();

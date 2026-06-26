@@ -27,6 +27,8 @@ class _PickLocationScreenState extends State<PickLocationScreen> {
   late LatLng _center = LatLng(widget.initial.lat, widget.initial.lng);
   StreamSubscription? _mapSub;
   Timer? _debounce;
+  Timer? _addrDebounce;
+  String _pinLabel = '';
   List<Place> _suggestions = [];
   bool _searching = false;
   bool _confirming = false;
@@ -34,17 +36,28 @@ class _PickLocationScreenState extends State<PickLocationScreen> {
   @override
   void initState() {
     super.initState();
+    _pinLabel = widget.initial.name;
     // Track the map's centre on every pan/zoom — the single source of truth for the
-    // chosen point (more reliable than onPositionChanged).
+    // chosen point. The address under the pin is re-resolved when the map settles.
     _mapSub = _map.mapEventStream.listen((e) {
       _center = e.camera.center;
+      _addrDebounce?.cancel();
+      _addrDebounce = Timer(const Duration(milliseconds: 500), _resolvePin);
     });
+  }
+
+  Future<void> _resolvePin() async {
+    final here = _center;
+    final name = await _geo.reverse(here.latitude, here.longitude);
+    if (!mounted) return;
+    setState(() => _pinLabel = name ?? '${here.latitude.toStringAsFixed(5)}, ${here.longitude.toStringAsFixed(5)}');
   }
 
   @override
   void dispose() {
     _mapSub?.cancel();
     _debounce?.cancel();
+    _addrDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -78,11 +91,13 @@ class _PickLocationScreenState extends State<PickLocationScreen> {
 
   Future<void> _confirm() async {
     setState(() => _confirming = true);
-    // _center is kept in sync with the map by the event-stream listener.
+    // _center is kept in sync with the map by the event-stream listener; _pinLabel is
+    // the resolved address under the pin.
     final target = _center;
-    final name = await _geo.reverse(target.latitude, target.longitude);
+    final label = _pinLabel.isNotEmpty
+        ? _pinLabel
+        : (await _geo.reverse(target.latitude, target.longitude) ?? 'Pinned location');
     if (!mounted) return;
-    final label = name ?? 'Pinned location';
     Navigator.of(context).pop(Place(
       name: label,
       shortName: label.split(',').first.trim(),
@@ -159,20 +174,49 @@ class _PickLocationScreenState extends State<PickLocationScreen> {
             ),
           ),
 
-          // Confirm button.
+          // Live "pin is here" card + confirm button.
           Align(
             alignment: Alignment.bottomCenter,
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _confirming ? null : _confirm,
-                    child: _confirming
-                        ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text('Confirm ${widget.title.toLowerCase()}'),
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10)],
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.place, color: AppTheme.accent),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _pinLabel.isEmpty ? 'Move the map to set the pin…' : _pinLabel,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.ink),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: _confirming ? null : _confirm,
+                        child: _confirming
+                            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text('Confirm ${widget.title.toLowerCase()}'),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

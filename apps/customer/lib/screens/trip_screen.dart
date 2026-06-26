@@ -317,7 +317,9 @@ class _TripScreenState extends State<TripScreen> {
                   ),
                 ],
               ),
-              if (_trip.status != 'in_progress') ...[
+              // You can cancel only while the rider is still on the way. Once they've
+              // arrived or the ride has started, it's "Report a problem" instead.
+              if (_trip.status == 'rider_assigned') ...[
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
