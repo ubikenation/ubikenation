@@ -46,6 +46,10 @@ class _BookingScreenState extends State<BookingScreen> {
   bool _scheduled = false;
   DateTime? _scheduleAt;
 
+  // True once the customer has manually set their pickup, so the (slow) GPS auto-detect
+  // never overwrites their choice if it finishes later.
+  bool _pickupLocked = false;
+
   @override
   void initState() {
     super.initState();
@@ -74,7 +78,10 @@ class _BookingScreenState extends State<BookingScreen> {
     final name = await _geo.reverse(lat, lng);
     if (!mounted) return;
     setState(() {
-      _pickup = Place(name: name ?? 'Current location', shortName: name ?? 'Current location', lat: lat, lng: lng);
+      // Don't clobber a pickup the user already set while GPS was resolving.
+      if (!_pickupLocked) {
+        _pickup = Place(name: name ?? 'Current location', shortName: name ?? 'Current location', lat: lat, lng: lng);
+      }
       _locating = false;
     });
   }
@@ -110,7 +117,10 @@ class _BookingScreenState extends State<BookingScreen> {
       MaterialPageRoute(builder: (_) => PickLocationScreen(initial: start, title: 'Set pickup')),
     );
     if (result == null || !mounted) return;
-    setState(() => _pickup = result);
+    setState(() {
+      _pickup = result;
+      _pickupLocked = true;
+    });
     if (_dropoff != null) await _loadFares();
   }
 

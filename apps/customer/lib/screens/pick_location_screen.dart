@@ -25,13 +25,25 @@ class _PickLocationScreenState extends State<PickLocationScreen> {
   final _searchCtrl = TextEditingController();
 
   late LatLng _center = LatLng(widget.initial.lat, widget.initial.lng);
+  StreamSubscription? _mapSub;
   Timer? _debounce;
   List<Place> _suggestions = [];
   bool _searching = false;
   bool _confirming = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Track the map's centre on every pan/zoom — the single source of truth for the
+    // chosen point (more reliable than onPositionChanged).
+    _mapSub = _map.mapEventStream.listen((e) {
+      _center = e.camera.center;
+    });
+  }
+
+  @override
   void dispose() {
+    _mapSub?.cancel();
     _debounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
@@ -66,13 +78,8 @@ class _PickLocationScreenState extends State<PickLocationScreen> {
 
   Future<void> _confirm() async {
     setState(() => _confirming = true);
-    // Read the map's actual current centre at confirm time (most reliable).
-    LatLng target;
-    try {
-      target = _map.camera.center;
-    } catch (_) {
-      target = _center;
-    }
+    // _center is kept in sync with the map by the event-stream listener.
+    final target = _center;
     final name = await _geo.reverse(target.latitude, target.longitude);
     if (!mounted) return;
     final label = name ?? 'Pinned location';
@@ -94,7 +101,6 @@ class _PickLocationScreenState extends State<PickLocationScreen> {
             center: LatLng(widget.initial.lat, widget.initial.lng),
             zoom: 16,
             controller: _map,
-            onCenterChanged: (c) => _center = c,
           ),
 
           // Fixed centre pin (stays put while the map moves underneath).
