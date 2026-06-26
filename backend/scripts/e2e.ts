@@ -358,6 +358,51 @@ async function main() {
   ok('GET /api/admin/plans', aPlans.status === 200 && Array.isArray(aPlans.data.data) && aPlans.data.data.length > 0,
     `count=${aPlans.data?.data?.length}`);
 
+  // 35) TWO-WAY CHAT (customer ↔ rider, both directions deliver + are visible)
+  const cMsg = await C.post(`/api/trips/${tripId}/chat`, { body: 'Hi, I am at the gate' });
+  ok('Customer sends chat (delivered)', cMsg.status === 201 && cMsg.data.data.delivered === true, errMsg(cMsg.data));
+  const rInbox = await R.get(`/api/trips/${tripId}/chat`);
+  ok('Rider receives the customer message',
+    rInbox.status === 200 && rInbox.data.data.some((m: { body: string }) => m.body === 'Hi, I am at the gate'));
+  const rMsg = await R.post(`/api/trips/${tripId}/chat`, { body: 'On my way, 2 minutes' });
+  ok('Rider replies (delivered)', rMsg.status === 201 && rMsg.data.data.delivered === true);
+  const cInbox = await C.get(`/api/trips/${tripId}/chat`);
+  ok('Customer receives the rider reply',
+    cInbox.status === 200 && cInbox.data.data.some((m: { body: string }) => m.body === 'On my way, 2 minutes'));
+
+  // 36) ZEGO CALL TOKENS — both parties get a valid token for the SAME room (trip)
+  const cTok = await C.get(`/api/calls/token?tripId=${tripId}`);
+  const rTok = await R.get(`/api/calls/token?tripId=${tripId}`);
+  ok('Customer gets a ZEGO voice token', cTok.status === 200 && (cTok.data?.data?.token ?? '').startsWith('04') && cTok.data.data.appId > 0,
+    `appId=${cTok.data?.data?.appId}`);
+  ok('Rider gets a ZEGO voice token', rTok.status === 200 && (rTok.data?.data?.token ?? '').startsWith('04'));
+  ok('Both join the same call room (the trip)', cTok.data?.data?.roomId === tripId && rTok.data?.data?.roomId === tripId);
+
+  // 37) ERRAND RIDER sees the errand details before accepting
+  const erider = await ensureUser(`ubike.e2e.erider.${stamp}@gmail.com`, 'passw0rd!', 'errands_rider', 'Errand Rider', '254700000009');
+  const ER = api(erider.token);
+  await ER.post('/api/riders/register', { kind: 'errands' });
+  await ER.post('/api/riders/documents', { kind: 'errands', documents: docs });
+  const { data: erRow } = await supabaseAdmin.from('riders').select('id').eq('profile_id', erider.id).eq('kind', 'errands').single();
+  await A.post(`/api/admin/riders/${erRow!.id}/approve`);
+  await ER.post('/api/riders/online', { isOnline: true });
+  await ER.post('/api/riders/location', { lat: -1.2921, lng: 36.8219 });
+  const errTrip = await C.post('/api/trips', {
+    tripType: 'errands', vehicleClass: 'errands',
+    pickup: { lat: -1.2921, lng: 36.8219, address: 'Home' },
+    dropoff: { lat: -1.30, lng: 36.79, address: 'Shop' },
+    distanceKm: 3, durationMin: 10,
+    errandType: 'grocery_shopping',
+    errandDetails: { description: '2kg sugar\n1 loaf bread\n6 eggs' },
+  });
+  const errId = errTrip.data?.data?.tripId as string;
+  const eAvail = await ER.get('/api/trips/available');
+  const seen = (eAvail.data?.data ?? []).find((t: { id: string }) => t.id === errId);
+  ok('Errand rider sees the errand request', eAvail.status === 200 && !!seen);
+  ok('Errand request shows type + the customer\'s description',
+    !!seen && seen.errand_type === 'grocery_shopping' && (seen.errand_details?.description ?? '').includes('sugar'),
+    seen ? `type=${seen.errand_type}` : 'not found');
+
   console.log(`\n=== RESULT: ${pass} passed, ${fail} failed ===\n`);
   process.exit(fail === 0 ? 0 : 1);
 }
