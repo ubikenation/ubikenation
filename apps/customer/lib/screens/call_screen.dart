@@ -80,7 +80,12 @@ class _CallScreenState extends State<CallScreen> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _status = 'Call failed: $e');
+      // If the native voice engine isn't available, don't show a cryptic error —
+      // point the user to in-app chat, which always works.
+      final msg = e.toString().contains('MissingPluginException')
+          ? 'Voice calling is unavailable right now. Please use chat instead.'
+          : 'Call failed: $e';
+      if (mounted) setState(() => _status = msg);
     }
   }
 

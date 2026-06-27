@@ -33,6 +33,7 @@ class _TripScreenState extends State<TripScreen> {
   Timer? _locPush;
   int _rating = 5;
   bool _busy = false;
+  final TextEditingController _ratingNote = TextEditingController();
   Map<String, dynamic>? _riderLoc;
 
   static const _trackStatuses = {'rider_assigned', 'arrived', 'in_progress'};
@@ -53,6 +54,7 @@ class _TripScreenState extends State<TripScreen> {
   void dispose() {
     _poll?.cancel();
     _locPush?.cancel();
+    _ratingNote.dispose();
     super.dispose();
   }
 
@@ -209,8 +211,18 @@ class _TripScreenState extends State<TripScreen> {
   }
 
   Future<void> _submitRating() async {
-    await context.read<TripRepository>().rate(_trip.id, _rating);
-    if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+    final nav = Navigator.of(context);
+    final note = _ratingNote.text.trim();
+    // The rating is non-critical: never trap the user on this screen. We try to
+    // save it, but we always finish (return home) afterwards, success or not.
+    try {
+      await context.read<TripRepository>().rate(_trip.id, _rating, comment: note.isEmpty ? null : note);
+    } catch (_) {
+      // ignore — the trip is already complete; a rating hiccup shouldn't block exit.
+    }
+    if (!mounted) return;
+    // popUntil(isFirst) is safe even when already at the root route (it pops nothing).
+    nav.popUntil((r) => r.isFirst);
   }
 
   @override
@@ -268,7 +280,13 @@ class _TripScreenState extends State<TripScreen> {
     return Column(
       children: [
         Expanded(
-          child: AppMap(center: center, zoom: 13.5, myLocation: LatLng(pickupLat, pickupLng), markers: markers),
+          child: AppMap(
+            center: center,
+            zoom: 13.5,
+            follow: true,
+            myLocation: inProgress ? null : LatLng(pickupLat, pickupLng),
+            markers: markers,
+          ),
         ),
         Container(
           width: double.infinity,
@@ -597,9 +615,22 @@ class _TripScreenState extends State<TripScreen> {
   }
 
   Widget _ratingBlock() {
+    // Scroll-safe so the optional note's keyboard never overflows the column.
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: IntrinsicHeight(child: _ratingColumn()),
+        ),
+      ),
+    );
+  }
+
+  Widget _ratingColumn() {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        const SizedBox(height: 8),
         const Icon(Icons.check_circle, size: 64, color: AppTheme.accent),
         const SizedBox(height: 12),
         const Text('Trip completed', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
@@ -615,8 +646,30 @@ class _TripScreenState extends State<TripScreen> {
             );
           }),
         ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: TextField(
+            controller: _ratingNote,
+            minLines: 2,
+            maxLines: 4,
+            maxLength: 300,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              hintText: 'Add a note (optional) — how was your trip?',
+              border: OutlineInputBorder(),
+              counterText: '',
+            ),
+          ),
+        ),
         const Spacer(),
-        FilledButton(onPressed: _submitRating, child: const Text('Submit & Finish')),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: SizedBox(
+            width: double.infinity,
+            child: FilledButton(onPressed: _submitRating, child: const Text('Submit & Finish')),
+          ),
+        ),
         TextButton(onPressed: _reportProblem, child: const Text('Report a problem')),
       ],
     );

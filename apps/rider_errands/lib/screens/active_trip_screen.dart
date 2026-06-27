@@ -37,6 +37,8 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
 
   // Push GPS frequently during the trip so the customer can track the rider.
   Timer? _locTimer;
+  double? _myLat; // rider's own live position (shown + followed on the map)
+  double? _myLng;
 
   @override
   void initState() {
@@ -63,6 +65,7 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
       if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return;
       final pos = await Geolocator.getCurrentPosition();
+      if (mounted) setState(() { _myLat = pos.latitude; _myLng = pos.longitude; });
       await repo.pushLocation(pos.latitude, pos.longitude);
     } catch (_) {}
   }
@@ -261,6 +264,14 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
     final custLat = (_custLoc?['customerLat'] as num?)?.toDouble();
     final custLng = (_custLoc?['customerLng'] as num?)?.toDouble();
     final custName = _custLoc?['customerName'] as String?;
+    final inProgress = status == 'in_progress';
+
+    // While the trip runs, follow the rider's own live position (Bolt-style) and
+    // keep the relevant target (customer/pickup before start, destination after)
+    // in frame. Before any GPS fix, fall back to the pickup/dropoff midpoint.
+    final mapCenter = (_myLat != null && _myLng != null)
+        ? LatLng(_myLat!, _myLng!)
+        : LatLng((pLat + dLat) / 2, (pLng + dLng) / 2);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -268,15 +279,16 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: SizedBox(
-            height: 180,
+            height: 220,
             child: AppMap(
-              center: LatLng((pLat + dLat) / 2, (pLng + dLng) / 2),
-              zoom: 12,
-              interactive: false,
+              center: mapCenter,
+              zoom: 14,
+              follow: _tripActive,
+              myLocation: (_myLat != null && _myLng != null) ? LatLng(_myLat!, _myLng!) : null,
               markers: [
                 MapMarker(LatLng(pLat, pLng), color: AppTheme.primary, icon: Icons.my_location),
                 MapMarker(LatLng(dLat, dLng), color: AppTheme.green, icon: Icons.location_pin),
-                if (custLat != null && custLng != null)
+                if (!inProgress && custLat != null && custLng != null)
                   MapMarker(LatLng(custLat, custLng), color: AppTheme.red, icon: Icons.person_pin_circle),
               ],
             ),

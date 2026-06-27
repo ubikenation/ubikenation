@@ -118,6 +118,8 @@ tripsRouter.post('/:id/hide', requireAuth, handler(async (req, res) => {
 
 // POST /api/trips/:id/rate — customer rates the rider.
 tripsRouter.post('/:id/rate', requireAuth, handler(async (req, res) => {
-  const { stars, comment } = z.object({ stars: z.number().int(), comment: z.string().optional() }).parse(req.body);
-  ok(res, await rateTrip(req.params.id, req.user!.id, stars, comment));
+  const { stars, comment } = z
+    .object({ stars: z.number().int(), comment: z.string().nullish() })
+    .parse(req.body);
+  ok(res, await rateTrip(req.params.id, req.user!.id, stars, comment ?? undefined));
 }));
