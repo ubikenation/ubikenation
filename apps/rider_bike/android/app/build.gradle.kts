@@ -31,6 +31,10 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // ZEGO dispatches native methods via reflection; R8 shrinking strips its
+            // SDK classes (no static refs), which made the plugin fail to register.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

@@ -51,13 +51,21 @@ class Trip {
   final int upfront;
   final int balance;
 
+  /// True if the rider nudged the fare above the system price.
+  final bool adjusted;
+
+  /// The original system fare before any rider adjustment.
+  final int baseFare;
+
   const Trip({
     required this.id,
     required this.status,
     required this.fare,
     required this.upfront,
     required this.balance,
-  });
+    this.adjusted = false,
+    int? baseFare,
+  }) : baseFare = baseFare ?? fare;
 
   factory Trip.fromCreate(Map<String, dynamic> j) => Trip(
         id: j['tripId'] as String,
@@ -67,11 +75,16 @@ class Trip {
         balance: (j['balance'] as num).toInt(),
       );
 
-  factory Trip.fromRow(Map<String, dynamic> j) => Trip(
-        id: j['id'] as String,
-        status: j['status'] as String,
-        fare: (j['final_fare'] as num?)?.toInt() ?? (j['base_fare'] as num).toInt(),
-        upfront: (j['upfront_amount'] as num?)?.toInt() ?? 0,
-        balance: (j['balance_amount'] as num?)?.toInt() ?? 0,
-      );
+  factory Trip.fromRow(Map<String, dynamic> j) {
+    final base = (j['base_fare'] as num?)?.toInt();
+    return Trip(
+      id: j['id'] as String,
+      status: j['status'] as String,
+      fare: (j['final_fare'] as num?)?.toInt() ?? base ?? 0,
+      upfront: (j['upfront_amount'] as num?)?.toInt() ?? 0,
+      balance: (j['balance_amount'] as num?)?.toInt() ?? 0,
+      adjusted: j['adjusted'] == true,
+      baseFare: base,
+    );
+  }
 }

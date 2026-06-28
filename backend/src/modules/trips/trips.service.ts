@@ -187,11 +187,20 @@ export async function quoteFare(tripId: string, riderProfileId: string, proposed
     .eq('id', tripId)
     .eq('status', 'quote_pending');
 
-  // Now the customer can be shown the price — nudge them to confirm & pay.
+  // Now the customer can be shown the price — nudge them to confirm & pay. If the
+  // rider nudged the fare up, say so explicitly so the change isn't a surprise.
   void notifyProfiles([trip.customer_id], {
-    title: 'Your rider is ready',
-    body: `Confirm and pay to start your trip — KES ${finalFare}.`,
-    data: { type: 'rider_found', tripId },
+    title: adjusted ? 'Rider adjusted the fare' : 'Your rider is ready',
+    body: adjusted
+      ? `Your rider set the fare to KES ${finalFare} (was KES ${base}). Confirm and pay to start.`
+      : `Confirm and pay to start your trip — KES ${finalFare}.`,
+    data: {
+      type: 'rider_found',
+      tripId,
+      adjusted: String(adjusted),
+      baseFare: String(base),
+      finalFare: String(finalFare),
+    },
   });
 
   return {

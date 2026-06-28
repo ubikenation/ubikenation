@@ -555,6 +555,30 @@ class _TripScreenState extends State<TripScreen> {
           ),
         ),
         const SizedBox(height: 18),
+        if (_trip.adjusted) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF4E5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFF0B66B)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline, color: Color(0xFFB97400), size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Your rider adjusted the fare to KES ${_trip.fare} (was KES ${_trip.baseFare}).',
+                    style: const TextStyle(color: Color(0xFF8A5800), fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
         const Text('Pay 50% now to confirm. The other half is paid when you reach your destination.',
             textAlign: TextAlign.center, style: TextStyle(color: AppTheme.muted)),
         const SizedBox(height: 14),
