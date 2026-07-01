@@ -14,9 +14,11 @@ import 'widgets/animated_splash.dart';
 import 'screens/auth_screen.dart';
 import 'screens/gate_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/call_screen.dart';
 
 /// Global key so foreground push can show an in-app banner.
 final messengerKey = GlobalKey<ScaffoldMessengerState>();
+final navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,7 +49,21 @@ Future<void> main() async {
 /// Best-effort push setup, after the first frame so it never blocks the UI.
 /// Riders get "new request" alerts; token registered after sign-in.
 Future<void> _initPush(ApiClient api) async {
-  final push = PushService(api, messengerKey: messengerKey);
+  final push = PushService(
+    api,
+    messengerKey: messengerKey,
+    onOpen: (data) {
+      if (data['type'] == 'incoming_call' && data['tripId'] is String) {
+        navigatorKey.currentState?.push(MaterialPageRoute(
+          builder: (_) => CallScreen(
+            tripId: data['tripId'] as String,
+            peerName: (data['callerName'] as String?) ?? 'Caller',
+            incoming: true,
+          ),
+        ));
+      }
+    },
+  );
   try {
     await Firebase.initializeApp().timeout(const Duration(seconds: 10));
     await push.init();
@@ -68,6 +84,7 @@ class RiderApp extends StatelessWidget {
     return MaterialApp(
       title: 'Piki',
       debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
       scaffoldMessengerKey: messengerKey,
       theme: AppTheme.light,
       home: const AnimatedSplash(next: ConnectivityGate(child: _AuthGate())),

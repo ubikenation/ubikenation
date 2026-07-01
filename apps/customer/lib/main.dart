@@ -15,6 +15,7 @@ import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/trip_screen.dart';
+import 'screens/call_screen.dart';
 
 /// Global keys so push notifications can show an in-app banner and navigate.
 final navigatorKey = GlobalKey<NavigatorState>();
@@ -56,6 +57,17 @@ Future<void> _initPush(ApiClient api, TripRepository repo) async {
     onOpen: (data) async {
       final tripId = data['tripId'];
       if (tripId is! String) return;
+      // Answering an incoming call → jump straight into the call room.
+      if (data['type'] == 'incoming_call') {
+        navigatorKey.currentState?.push(MaterialPageRoute(
+          builder: (_) => CallScreen(
+            tripId: tripId,
+            peerName: (data['callerName'] as String?) ?? 'Caller',
+            incoming: true,
+          ),
+        ));
+        return;
+      }
       try {
         final trip = await repo.getTrip(tripId);
         navigatorKey.currentState?.push(MaterialPageRoute(builder: (_) => TripScreen(trip: trip)));

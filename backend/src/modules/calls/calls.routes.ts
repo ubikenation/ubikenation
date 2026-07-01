@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { handler, ok, badRequest } from '../../utils/http';
 import { requireAuth } from '../../middleware/auth';
 import { env } from '../../config/env';
+import { supabaseAdmin } from '../../config/supabase';
 import { getTrip } from '../trips/trips.service';
+import { notifyProfiles } from '../notifications/notification.service';
 import { generateZegoToken } from './zego';
 
 export const callsRouter = Router();
@@ -24,4 +26,45 @@ callsRouter.get('/token', requireAuth, handler(async (req, res) => {
     userId: req.user!.id,
     roomId: tripId, // both parties join the same room (the trip)
   });
+}));
+
+// POST /api/calls/ring — the caller (already joining the room) rings the other
+// party so they get an "Incoming call" push and can join the same room. Without
+// this the peer never knows to join and the call can't connect.
+callsRouter.post('/ring', requireAuth, handler(async (req, res) => {
+  const { tripId } = z.object({ tripId: z.string().uuid() }).parse(req.body ?? {});
+  const caller = req.user!.id;
+  const trip = await getTrip(tripId, caller); // verifies caller is a party
+
+  // Resolve the peer's profile id + the caller's display name.
+  let peerProfileId: string | null = null;
+  if (trip.customer_id === caller) {
+    // Caller is the customer → ring the rider.
+    if (trip.rider_id) {
+      const { data: rider } = await supabaseAdmin
+        .from('riders')
+        .select('profile_id')
+        .eq('id', trip.rider_id)
+        .maybeSingle();
+      peerProfileId = rider?.profile_id ?? null;
+    }
+  } else {
+    // Caller is the rider → ring the customer.
+    peerProfileId = trip.customer_id;
+  }
+  if (!peerProfileId) return ok(res, { rung: false, reason: 'no peer yet' });
+
+  const { data: me } = await supabaseAdmin
+    .from('profiles')
+    .select('full_name')
+    .eq('id', caller)
+    .maybeSingle();
+  const callerName = me?.full_name ?? 'Someone';
+
+  await notifyProfiles([peerProfileId], {
+    title: 'Incoming call',
+    body: `${callerName} is calling you`,
+    data: { type: 'incoming_call', tripId, callerName },
+  });
+  ok(res, { rung: true });
 }));

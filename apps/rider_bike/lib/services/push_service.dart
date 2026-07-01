@@ -35,6 +35,12 @@ class PushService {
   }
 
   void _showForeground(RemoteMessage m) {
+    // An incoming call in the foreground should ring immediately, not sit in a
+    // passive banner — jump straight to the call screen.
+    if (m.data['type'] == 'incoming_call') {
+      onOpen?.call(m.data);
+      return;
+    }
     final n = m.notification;
     final messenger = messengerKey?.currentState;
     if (n == null || messenger == null) return;
