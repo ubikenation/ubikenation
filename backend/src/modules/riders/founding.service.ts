@@ -22,27 +22,19 @@ export interface FeeQuote {
  * allocation stable even if non-founding riders are approved in between.
  */
 export async function quoteRegistrationFee(kind: RiderKind): Promise<FeeQuote> {
-  if (kind === 'errands') {
-    // Errands riders are not part of the paid founding program in this spec.
-    return {
-      kind,
-      isFounding: false,
-      registrationFee: 0,
-      slotsTotal: 0,
-      slotsUsed: 0,
-      slotsRemaining: 0,
-      programEnabled: true,
-    };
-  }
-
   const { data: program } = await supabaseAdmin
     .from('founding_program')
-    .select('bike_slots, car_slots, enabled')
+    .select('bike_slots, car_slots, errands_slots, enabled')
     .eq('id', 1)
     .single();
 
   const programEnabled = program?.enabled ?? true;
-  const slotsTotal = kind === 'bike' ? program?.bike_slots ?? env.FOUNDING_BIKE_SLOTS : program?.car_slots ?? env.FOUNDING_CAR_SLOTS;
+  const slotsTotal =
+    kind === 'bike'
+      ? program?.bike_slots ?? env.FOUNDING_BIKE_SLOTS
+      : kind === 'car'
+        ? program?.car_slots ?? env.FOUNDING_CAR_SLOTS
+        : program?.errands_slots ?? env.FOUNDING_ERRANDS_SLOTS; // errands: 5 free, then fee
 
   // Count riders of this kind who already occupy a founding slot.
   const { count } = await supabaseAdmin
@@ -54,7 +46,12 @@ export async function quoteRegistrationFee(kind: RiderKind): Promise<FeeQuote> {
   const slotsUsed = count ?? 0;
   const slotsRemaining = Math.max(0, slotsTotal - slotsUsed);
 
-  const normalFee = kind === 'bike' ? env.BIKE_REGISTRATION_FEE : env.CAR_REGISTRATION_FEE;
+  const normalFee =
+    kind === 'bike'
+      ? env.BIKE_REGISTRATION_FEE
+      : kind === 'car'
+        ? env.CAR_REGISTRATION_FEE
+        : env.ERRANDS_REGISTRATION_FEE;
   const isFounding = programEnabled && slotsRemaining > 0;
 
   return {
@@ -80,6 +77,7 @@ export async function claimRegistrationFee(riderId: string, kind: RiderKind): Pr
     p_kind: kind,
     p_bike_fee: env.BIKE_REGISTRATION_FEE,
     p_car_fee: env.CAR_REGISTRATION_FEE,
+    p_errands_fee: env.ERRANDS_REGISTRATION_FEE,
   });
   if (error) {
     // Fallback to a non-atomic update if the function isn't installed yet.

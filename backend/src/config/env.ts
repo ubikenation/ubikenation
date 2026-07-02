@@ -40,8 +40,10 @@ const schema = z.object({
   COMMISSION_RATE: z.coerce.number().min(0).max(1).default(0.2),
   FOUNDING_BIKE_SLOTS: z.coerce.number().int().default(10),
   FOUNDING_CAR_SLOTS: z.coerce.number().int().default(10),
+  FOUNDING_ERRANDS_SLOTS: z.coerce.number().int().default(5),
   BIKE_REGISTRATION_FEE: z.coerce.number().int().default(2000),
   CAR_REGISTRATION_FEE: z.coerce.number().int().default(4000),
+  ERRANDS_REGISTRATION_FEE: z.coerce.number().int().default(2000),
   MAX_RIDER_PRICE_ADJUSTMENT: z.coerce.number().min(0).max(1).default(0.3),
   UPFRONT_PAYMENT_RATIO: z.coerce.number().min(0).max(1).default(0.5),
 

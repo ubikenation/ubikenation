@@ -281,6 +281,7 @@ create table if not exists founding_program (
   id            int primary key default 1 check (id = 1),
   bike_slots    int not null default 10,
   car_slots     int not null default 10,
+  errands_slots int not null default 5,
   enabled       boolean not null default true,
   updated_at    timestamptz not null default now()
 );

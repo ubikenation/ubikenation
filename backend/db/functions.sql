@@ -56,11 +56,15 @@ $$;
 -- the rider as founding (fee 0) if a slot remains; otherwise sets the
 -- normal fee. Returns the fee that applies.
 -- ---------------------------------------------------------------------
+-- Errands riders now have their own founding program too (first 5 free, then a fee),
+-- so this takes an errands fee and reads errands_slots. Drop the old 4-arg version.
+drop function if exists claim_founding_slot(uuid, rider_kind, integer, integer);
 create or replace function claim_founding_slot(
   p_rider uuid,
   p_kind rider_kind,
   p_bike_fee integer,
-  p_car_fee integer
+  p_car_fee integer,
+  p_errands_fee integer
 ) returns integer
 language plpgsql
 as $$
@@ -71,25 +75,20 @@ declare
   v_fee integer;
   v_is_founding boolean;
 begin
-  if p_kind = 'errands' then
-    update riders set is_founding = false, registration_fee = 0 where id = p_rider;
-    return 0;
-  end if;
-
   select enabled,
-         case when p_kind = 'bike' then bike_slots else car_slots end
+         case p_kind when 'bike' then bike_slots when 'car' then car_slots else errands_slots end
     into v_enabled, v_slots
     from founding_program where id = 1 for update;
 
   select count(*) into v_used
     from riders where kind = p_kind and is_founding = true and id <> p_rider;
 
-  if coalesce(v_enabled, true) and v_used < v_slots then
+  if coalesce(v_enabled, true) and v_used < coalesce(v_slots, 0) then
     v_is_founding := true;
     v_fee := 0;
   else
     v_is_founding := false;
-    v_fee := case when p_kind = 'bike' then p_bike_fee else p_car_fee end;
+    v_fee := case p_kind when 'bike' then p_bike_fee when 'car' then p_car_fee else p_errands_fee end;
   end if;
 
   update riders
