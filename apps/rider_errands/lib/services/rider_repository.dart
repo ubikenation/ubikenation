@@ -27,13 +27,20 @@ class RiderRepository {
 
   Future<void> confirmFreeRegistration() => _api.post('/api/riders/free-registration', {'kind': kind});
 
-  Future<String> payRegistration(int amount) async {
+  /// Paystack callback sentinel the WebView watches for to detect success.
+  static const String paystackCallbackUrl = 'https://ubike.app/paystack/callback';
+
+  Future<({String url, String reference})> payRegistration(int amount) async {
     final d = await _api.post('/api/payments/initiate', {
       'purpose': 'rider_registration',
       'amount': amount,
-    });
-    return (d as Map<String, dynamic>)['authorizationUrl'] as String;
+      'callbackUrl': paystackCallbackUrl,
+    }) as Map<String, dynamic>;
+    return (url: d['authorizationUrl'] as String, reference: d['reference'] as String);
   }
+
+  /// Confirms a Paystack payment with the backend (verifies + settles it).
+  Future<void> verifyPayment(String reference) => _api.post('/api/payments/verify/$reference');
 
   /// Returns the rider record for this account (bike kind), or null if none yet.
   Future<RiderRecord?> myStatus() async {

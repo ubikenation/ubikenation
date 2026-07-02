@@ -5,6 +5,7 @@ import '../models/models.dart';
 import '../services/rider_repository.dart';
 import '../services/storage_service.dart';
 import '../theme/app_theme.dart';
+import 'paystack_webview.dart';
 
 /// Detailed, validated rider registration:
 /// Personal Info → Documents (incl. profile photo) → Vehicle Info →
@@ -172,16 +173,21 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           _step += 1;
         });
       } else {
-        final url = await repo.payRegistration(_fee!.registrationFee);
+        // Real Paystack checkout in a WebView; only advance once payment is verified.
+        final pay = await repo.payRegistration(_fee!.registrationFee);
         if (!mounted) return;
-        await showDialog<void>(
-          context: context,
-          builder: (_) => AlertDialog(
-            title: Text('Pay KES ${_fee!.registrationFee}'),
-            content: Text('Complete your registration payment via Paystack:\n\n$url'),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Done'))],
-          ),
-        );
+        final paid = await Navigator.of(context).push<bool>(MaterialPageRoute(
+          builder: (_) => PaystackWebView(url: pay.url, callbackUrl: RiderRepository.paystackCallbackUrl),
+        ));
+        if (paid != true) {
+          if (mounted) {
+            setState(() => _error =
+                'Payment not completed. Pay the KES ${_fee!.registrationFee} registration fee to submit for approval.');
+          }
+          return;
+        }
+        await repo.verifyPayment(pay.reference);
+        if (!mounted) return;
         setState(() {
           _feePaid = true;
           _step += 1;

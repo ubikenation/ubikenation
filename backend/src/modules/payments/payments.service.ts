@@ -118,6 +118,17 @@ export async function settlePayment(reference: string) {
         .from('riders')
         .update({ registration_paid: true, registration_payment_id: payment.id })
         .eq('profile_id', payment.profile_id);
+      // The registration fee is company income → company wallet (then auto-swept to
+      // the company M-Pesa on the same schedule as commission). rate 1.0 = 100% company.
+      if (payment.amount > 0) {
+        const { error: clErr } = await supabaseAdmin.from('company_ledger').insert({
+          trip_id: null,
+          amount: payment.amount,
+          rate: 1.0,
+          reason: `Rider registration fee (profile ${payment.profile_id})`,
+        });
+        if (clErr) logger.error({ err: clErr.message }, 'company_ledger registration credit failed');
+      }
       break;
   }
 
