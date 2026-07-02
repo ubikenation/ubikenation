@@ -1,37 +1,58 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Keeps users signed in across app restarts (Supabase persists the session), but
-/// FORCES a fresh sign-in when the app hasn't been opened for 48h. Also flags a
-/// friendly "welcome back" greeting when they return after being away a while.
+/// Keeps users signed in across app restarts (Supabase persists the login token),
+/// but FORCES a fresh sign-in when the app hasn't been opened for 48h. The
+/// "last seen" time is stored in Supabase (profiles.last_seen_at) — NO local
+/// database is used. Also flags a friendly "welcome back" greeting on return.
 class SessionGuard {
   SessionGuard._();
 
-  static const _kLastOpened = 'last_opened_ms';
   static const Duration maxIdle = Duration(hours: 48); // > this ⇒ must sign in again
   static const Duration welcomeAfter = Duration(hours: 1); // away > this ⇒ greet them
 
-  /// Evaluates idle time: signs out if idle ≥ 48h, then records "now" as the last
-  /// open. Returns true if we should show the "welcome back" popup.
-  static Future<bool> evaluate() async {
-    final prefs = await SharedPreferences.getInstance();
-    final lastMs = prefs.getInt(_kLastOpened);
-    final now = DateTime.now();
-    final signedIn = Supabase.instance.client.auth.currentSession != null;
+  static SupabaseClient get _c => Supabase.instance.client;
 
-    var welcome = false;
-    if (signedIn && lastMs != null) {
-      final away = now.difference(DateTime.fromMillisecondsSinceEpoch(lastMs));
+  /// Reads the previous last_seen from Supabase, signs out if idle ≥ 48h, then
+  /// stamps last_seen = now. Returns true if we should greet with "welcome back".
+  /// Fails open (keeps the session) if offline / on any error.
+  static Future<bool> evaluate() async {
+    final uid = _c.auth.currentUser?.id;
+    if (uid == null) return false; // not signed in — nothing to do
+    final now = DateTime.now().toUtc();
+
+    DateTime? prev;
+    try {
+      final row = await _c.from('profiles').select('last_seen_at').eq('id', uid).maybeSingle();
+      final ls = row?['last_seen_at'] as String?;
+      if (ls != null) prev = DateTime.tryParse(ls)?.toUtc();
+    } catch (_) {
+      return false; // offline / error → don't disturb the session
+    }
+
+    if (prev != null) {
+      final away = now.difference(prev);
       if (away >= maxIdle) {
-        // Too long away — require a fresh sign-in.
-        await Supabase.instance.client.auth.signOut();
-      } else if (away >= welcomeAfter) {
-        welcome = true;
+        await _c.auth.signOut(); // idle too long → require a fresh sign-in
+        return false;
+      }
+      if (away >= welcomeAfter) {
+        await markSeen();
+        return true;
       }
     }
-    await prefs.setInt(_kLastOpened, now.millisecondsSinceEpoch);
-    return welcome;
+    await markSeen();
+    return false;
+  }
+
+  /// Stamps profiles.last_seen_at = now (best-effort). Call on sign-in so the next
+  /// launch after a forced re-login starts fresh.
+  static Future<void> markSeen() async {
+    final uid = _c.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      await _c.from('profiles').update({'last_seen_at': DateTime.now().toUtc().toIso8601String()}).eq('id', uid);
+    } catch (_) {/* best-effort */}
   }
 
   /// Shows the 10-second "welcome back" greeting via the app-wide messenger.

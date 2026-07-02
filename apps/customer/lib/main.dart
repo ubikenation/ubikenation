@@ -89,7 +89,10 @@ Future<void> _initPush(ApiClient api, TripRepository repo) async {
       await push.registerToken();
     }
     Supabase.instance.client.auth.onAuthStateChange.listen((s) {
-      if (s.session != null) push.registerToken();
+      if (s.session != null) {
+        push.registerToken();
+        SessionGuard.markSeen(); // stamp last-seen on sign-in so re-login starts fresh
+      }
     });
   } catch (_) {/* Firebase not configured / slow — push disabled, app still runs */}
 }
