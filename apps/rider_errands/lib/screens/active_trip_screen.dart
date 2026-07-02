@@ -246,7 +246,17 @@ class _ActiveTripScreenState extends State<ActiveTripScreen> {
         body: SafeArea(
           child: trip == null
               ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
-              : Padding(padding: const EdgeInsets.all(20), child: _content(trip)),
+              // Scroll-safe: on tall content (errand items + fare buttons) the screen
+              // scrolls instead of pushing the confirm buttons off the bottom.
+              : LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: constraints.maxHeight - 40),
+                      child: IntrinsicHeight(child: _content(trip)),
+                    ),
+                  ),
+                ),
         ),
       ),
     );
