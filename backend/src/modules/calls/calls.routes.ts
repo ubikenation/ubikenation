@@ -39,6 +39,20 @@ callsRouter.get('/token', requireAuth, handler(async (req, res) => {
   });
 }));
 
+// GET /api/calls/ice — ICE servers (STUN + TURN) for the WebRTC voice call. TURN
+// (from env) is what makes calls connect over mobile NAT; STUN is free/public.
+callsRouter.get('/ice', requireAuth, handler(async (_req, res) => {
+  const split = (s: string) => s.split(',').map((u) => u.trim()).filter(Boolean);
+  const iceServers: Array<{ urls: string[]; username?: string; credential?: string }> = [];
+  const stun = split(env.STUN_URLS);
+  if (stun.length) iceServers.push({ urls: stun });
+  const turn = split(env.TURN_URLS);
+  if (turn.length && env.TURN_USERNAME && env.TURN_CREDENTIAL) {
+    iceServers.push({ urls: turn, username: env.TURN_USERNAME, credential: env.TURN_CREDENTIAL });
+  }
+  ok(res, { iceServers });
+}));
+
 // POST /api/calls/ring — the caller (already joining the room) rings the other
 // party so they get an "Incoming call" push and can join the same room. Without
 // this the peer never knows to join and the call can't connect.

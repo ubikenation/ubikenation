@@ -1,27 +1,26 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
-import 'package:zego_express_engine/zego_express_engine.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/api_client.dart';
 import '../theme/app_theme.dart';
 
-/// Real-time voice call over ZEGOCLOUD. Both parties join the same room (the trip)
-/// using a server-issued token; audio is published and any remote audio is played.
-/// Audio-only — no video.
-///
-/// The flow is fully instrumented: every ZEGO failure (login/publish/engine) is
-/// surfaced with its error code instead of hanging on "Calling…", so problems are
-/// diagnosable on the spot.
+/// Free peer-to-peer voice call over WebRTC (flutter_webrtc). Signaling — the
+/// offer/answer/ICE exchange — rides on Supabase Realtime (a broadcast channel
+/// named by the trip), so there is NO paid calling vendor and no extra server.
+/// STUN/TURN servers come from the backend (/api/calls/ice). The other party is
+/// alerted by the existing FCM "ring" push and joins the same channel.
 class CallScreen extends StatefulWidget {
   const CallScreen({super.key, required this.tripId, required this.peerName, this.incoming = false});
   final String tripId;
   final String peerName;
 
-  /// True when this screen was opened by answering an incoming-call push (so we
-  /// don't ring the caller back).
+  /// True when opened by answering an incoming-call push (so we don't ring back
+  /// and we act as the callee, not the caller).
   final bool incoming;
 
   @override
@@ -32,13 +31,16 @@ class _CallScreenState extends State<CallScreen> {
   String _status = 'Connecting…';
   bool _muted = false;
   bool _speaker = true;
-  bool _inRoom = false;
-  bool _engineCreated = false;
-  bool _peerJoined = false;
   bool _permanentlyDenied = false;
-  String? _roomId;
-  String? _myStreamId;
-  String? _appSign; // set only when the project uses AppSign authentication
+
+  RTCPeerConnection? _pc;
+  MediaStream? _localStream;
+  RealtimeChannel? _channel;
+  bool _remoteDescSet = false;
+  final List<RTCIceCandidate> _pendingRemote = [];
+  bool _closed = false;
+
+  bool get _isCaller => !widget.incoming;
 
   @override
   void initState() {
@@ -53,7 +55,7 @@ class _CallScreenState extends State<CallScreen> {
   Future<void> _start() async {
     final api = context.read<ApiClient>();
 
-    // 1) Microphone permission — a voice call is impossible without it.
+    // 1) Microphone permission.
     final mic = await Permission.microphone.request();
     if (!mic.isGranted) {
       setState(() {
@@ -65,152 +67,161 @@ class _CallScreenState extends State<CallScreen> {
       return;
     }
 
-    // 2) Fetch a room token from our backend (verifies we're a party to the trip).
-    Map<String, dynamic> data;
-    int appId;
-    String token;
-    String userId;
+    // 2) ICE servers (STUN + TURN) from the backend.
+    List<Map<String, dynamic>> iceServers;
     try {
-      data = await api.get('/api/calls/token?tripId=${widget.tripId}') as Map<String, dynamic>;
-      appId = (data['appId'] as num).toInt();
-      token = data['token'] as String;
-      userId = data['userId'] as String;
-      _roomId = data['roomId'] as String;
-      _myStreamId = '${_roomId}_$userId';
-      final rawSign = data['appSign'] as String?;
-      _appSign = (rawSign != null && rawSign.isNotEmpty) ? rawSign : null;
-    } catch (e) {
-      _set('Could not start the call (server): $e');
-      return;
-    }
-    if (appId == 0 || token.isEmpty) {
-      _set('Voice calling is not configured on the server.');
-      return;
+      final data = await api.get('/api/calls/ice') as Map<String, dynamic>;
+      iceServers = ((data['iceServers'] as List<dynamic>?) ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+    } catch (_) {
+      iceServers = [
+        {'urls': ['stun:stun.l.google.com:19302']},
+      ];
     }
 
-    // 3) Create the engine. Destroy any leftover engine first so a re-open never
-    //    hits "engine already created".
+    // 3) Peer connection + local mic.
     try {
-      try {
-        await ZegoExpressEngine.destroyEngine();
-      } catch (_) {/* nothing to destroy */}
-
-      // Surface every SDK-level error while we're stabilising calls.
-      ZegoExpressEngine.onDebugError = (code, func, info) {
-        if (code != 0) debugPrint('[ZEGO] error $code in $func: $info');
-      };
-      ZegoExpressEngine.onApiCalledResult = (code, func, info) {
-        if (code != 0) debugPrint('[ZEGO] api $func -> $code: $info');
-      };
-
-      await ZegoExpressEngine.createEngineWithProfile(
-        // When the project uses AppSign auth, pass the sign so login is authenticated
-        // with it (fixes ZEGO 1001005); otherwise leave null and use the room token.
-        ZegoEngineProfile(appId, ZegoScenario.StandardVoiceCall, appSign: _appSign),
-      );
-      _engineCreated = true;
-    } catch (e) {
-      final missing = e.toString().contains('MissingPluginException');
-      _set(missing
-          ? 'Voice calling is unavailable right now. Please use chat instead.'
-          : 'Could not start the audio engine: $e');
-      return;
-    }
-
-    // 4) Register room / stream / publisher listeners BEFORE logging in.
-    ZegoExpressEngine.onRoomStateChanged = (roomID, reason, errorCode, extended) {
-      if (!mounted) return;
-      if (reason == ZegoRoomStateChangedReason.Logined) {
-        _set(_peerJoined ? 'In call' : 'Connected — waiting for the other person…');
-      } else if (reason == ZegoRoomStateChangedReason.LoginFailed) {
-        _set('Could not connect the call (code $errorCode). Please use chat.');
-      } else if (reason == ZegoRoomStateChangedReason.Reconnecting) {
-        _set('Reconnecting…');
-      } else if (reason == ZegoRoomStateChangedReason.KickOut) {
-        _set('Call ended (signed in elsewhere).');
+      _pc = await createPeerConnection({
+        'iceServers': iceServers,
+        'sdpSemantics': 'unified-plan',
+      });
+      _localStream = await navigator.mediaDevices.getUserMedia({'audio': true, 'video': false});
+      for (final track in _localStream!.getTracks()) {
+        await _pc!.addTrack(track, _localStream!);
       }
-    };
+    } catch (e) {
+      _set('Could not start the microphone: $e');
+      return;
+    }
 
-    ZegoExpressEngine.onRoomStreamUpdate = (roomID, updateType, streamList, extended) {
-      for (final s in streamList) {
-        if (updateType == ZegoUpdateType.Add) {
-          ZegoExpressEngine.instance.startPlayingStream(s.streamID);
-          _peerJoined = true;
-          _set('In call');
-        } else {
-          ZegoExpressEngine.instance.stopPlayingStream(s.streamID);
-          _peerJoined = false;
-          _set('The other person left the call.');
+    _pc!
+      ..onIceCandidate = (c) {
+        if (c.candidate != null) {
+          _send('candidate', {
+            'candidate': c.candidate,
+            'sdpMid': c.sdpMid,
+            'sdpMLineIndex': c.sdpMLineIndex,
+          });
         }
       }
-    };
-
-    ZegoExpressEngine.onPublisherStateUpdate = (streamID, state, errorCode, extended) {
-      if (!mounted) return;
-      if (errorCode != 0) {
-        _set('Could not send your audio (code $errorCode).');
+      ..onConnectionState = (s) {
+        if (s == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          _set('In call');
+        } else if (s == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+          _set('Reconnecting…');
+        } else if (s == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
+          _set('Call connection failed. Please use chat.');
+        }
       }
-    };
+      ..onTrack = (event) {
+        // Remote audio plays automatically once the track arrives.
+        if (event.track.kind == 'audio') _set('In call');
+      };
 
-    // 5) Log in to the room — CHECK the result. A bad token / wrong auth mode /
-    //    network problem shows up here as a non-zero errorCode instead of a hang.
-    try {
-      final result = await ZegoExpressEngine.instance.loginRoom(
-        _roomId!,
-        ZegoUser(userId, userId),
-        config: ZegoRoomConfig(0, true, token),
-      );
-      if (result.errorCode != 0) {
-        _set('Could not connect the call (login ${result.errorCode}). Please use chat.');
-        return;
+    // 4) Signaling over Supabase Realtime (broadcast channel per trip).
+    final supa = Supabase.instance.client;
+    final channel = supa.channel('call:${widget.tripId}');
+    _channel = channel;
+    channel.onBroadcast(event: 'signal', callback: (payload) => _onSignal(payload));
+    channel.subscribe((status, [error]) async {
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        if (_isCaller) {
+          await _makeOffer();
+          // Tell the other party to open the call.
+          try {
+            await api.post('/api/calls/ring', {'tripId': widget.tripId});
+          } catch (_) {}
+          _set('Calling… waiting for the other person');
+        } else {
+          // Callee: announce readiness so the caller (re)sends its offer.
+          _send('ready', {});
+          _set('Connecting the call…');
+        }
       }
-      _inRoom = true;
-    } catch (e) {
-      _set('Could not join the call: $e');
-      return;
+    });
+  }
+
+  Future<void> _makeOffer() async {
+    if (_pc == null) return;
+    final offer = await _pc!.createOffer({});
+    await _pc!.setLocalDescription(offer);
+    _send('offer', {'sdp': offer.sdp, 'type': offer.type});
+  }
+
+  void _send(String type, Map<String, dynamic> data) {
+    _channel?.sendBroadcastMessage(event: 'signal', payload: {'type': type, ...data});
+  }
+
+  Future<void> _onSignal(Map<String, dynamic> payload) async {
+    if (_closed || _pc == null) return;
+    final type = payload['type'] as String?;
+    switch (type) {
+      case 'ready': // callee joined → (re)send our offer
+        if (_isCaller) await _makeOffer();
+        break;
+      case 'offer':
+        if (!_isCaller) {
+          await _pc!.setRemoteDescription(RTCSessionDescription(payload['sdp'] as String, payload['type'] as String));
+          _remoteDescSet = true;
+          await _drainCandidates();
+          final answer = await _pc!.createAnswer({});
+          await _pc!.setLocalDescription(answer);
+          _send('answer', {'sdp': answer.sdp, 'type': answer.type});
+        }
+        break;
+      case 'answer':
+        if (_isCaller && !_remoteDescSet) {
+          await _pc!.setRemoteDescription(RTCSessionDescription(payload['sdp'] as String, payload['type'] as String));
+          _remoteDescSet = true;
+          await _drainCandidates();
+        }
+        break;
+      case 'candidate':
+        final cand = RTCIceCandidate(
+          payload['candidate'] as String?,
+          payload['sdpMid'] as String?,
+          (payload['sdpMLineIndex'] as num?)?.toInt(),
+        );
+        if (_remoteDescSet) {
+          await _pc!.addCandidate(cand);
+        } else {
+          _pendingRemote.add(cand); // buffer until the remote description is set
+        }
+        break;
+      case 'bye':
+        _set('Call ended.');
+        if (mounted) Navigator.of(context).maybePop();
+        break;
     }
+  }
 
-    // Ring the other party so they get an "Incoming call" push and can join the
-    // same room. Skipped when we're the one answering an incoming call.
-    if (!widget.incoming) {
+  Future<void> _drainCandidates() async {
+    for (final c in _pendingRemote) {
       try {
-        await api.post('/api/calls/ring', {'tripId': widget.tripId});
-      } catch (_) {/* best-effort — the call still works if they open it too */}
+        await _pc!.addCandidate(c);
+      } catch (_) {}
     }
-
-    // 6) Publish our microphone and route audio to the speaker.
-    try {
-      await ZegoExpressEngine.instance.muteMicrophone(false);
-      await ZegoExpressEngine.instance.startPublishingStream(_myStreamId!);
-      await ZegoExpressEngine.instance.setAudioRouteToSpeaker(_speaker);
-    } catch (e) {
-      _set('Could not send your audio: $e');
-      return;
-    }
-
-    if (!_peerJoined) _set('Calling… waiting for the other person to join');
+    _pendingRemote.clear();
   }
 
   Future<void> _cleanup() async {
-    // Clear the global handlers first so their closures don't fire after dispose.
-    ZegoExpressEngine.onRoomStateChanged = null;
-    ZegoExpressEngine.onRoomStreamUpdate = null;
-    ZegoExpressEngine.onPublisherStateUpdate = null;
-    ZegoExpressEngine.onDebugError = null;
-    ZegoExpressEngine.onApiCalledResult = null;
+    _closed = true;
     try {
-      if (_inRoom) {
-        try {
-          await ZegoExpressEngine.instance.stopPublishingStream();
-        } catch (_) {}
-        if (_roomId != null) {
-          try {
-            await ZegoExpressEngine.instance.logoutRoom(_roomId!);
-          } catch (_) {}
-        }
+      _send('bye', {});
+    } catch (_) {}
+    try {
+      await _channel?.unsubscribe();
+    } catch (_) {}
+    try {
+      for (final t in _localStream?.getTracks() ?? <MediaStreamTrack>[]) {
+        await t.stop();
       }
-      if (_engineCreated) await ZegoExpressEngine.destroyEngine();
-    } catch (_) {/* ignore */}
+      await _localStream?.dispose();
+    } catch (_) {}
+    try {
+      await _pc?.close();
+    } catch (_) {}
   }
 
   @override
@@ -220,15 +231,18 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   Future<void> _toggleMute() async {
-    if (!_inRoom) return;
+    final tracks = _localStream?.getAudioTracks() ?? [];
+    if (tracks.isEmpty) return;
     setState(() => _muted = !_muted);
-    await ZegoExpressEngine.instance.muteMicrophone(_muted);
+    tracks.first.enabled = !_muted;
   }
 
   Future<void> _toggleSpeaker() async {
-    if (!_engineCreated) return;
+    if (_localStream == null) return;
     setState(() => _speaker = !_speaker);
-    await ZegoExpressEngine.instance.setAudioRouteToSpeaker(_speaker);
+    try {
+      await Helper.setSpeakerphoneOn(_speaker);
+    } catch (_) {}
   }
 
   void _hangUp() => Navigator.of(context).maybePop();

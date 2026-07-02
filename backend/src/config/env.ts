@@ -29,6 +29,15 @@ const schema = z.object({
   // — fixes ZEGO login error 1001005). Leave empty to use token authentication.
   ZEGO_APP_SIGN: z.string().optional().default(''),
 
+  // ---- Free WebRTC voice calls (flutter_webrtc + Supabase Realtime signaling) ----
+  // STUN is free/public. TURN relays audio when both phones are behind mobile NAT;
+  // set these from a free Metered account (or your own coturn) so calls connect on
+  // cellular. Multiple TURN URLs may be comma-separated. Empty ⇒ STUN only.
+  TURN_URLS: z.string().optional().default(''),
+  TURN_USERNAME: z.string().optional().default(''),
+  TURN_CREDENTIAL: z.string().optional().default(''),
+  STUN_URLS: z.string().optional().default('stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302'),
+
   // Firebase service account for FCM push (optional; push is a no-op until provided).
   // Provide EITHER a path to the JSON file OR the raw JSON pasted as one env var
   // (handy on Render/Vercel where mounting a file is awkward).
