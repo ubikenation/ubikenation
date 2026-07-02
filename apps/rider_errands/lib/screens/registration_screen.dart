@@ -75,7 +75,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     setState(() => _busy = true);
     try {
       final fee = await context.read<RiderRepository>().register();
-      if (mounted) setState(() => _fee = fee);
+      if (mounted) setState(() { _fee = fee; if (fee.alreadyPaid) _feePaid = true; });
       // Resume: restore any documents/plate photo already uploaded in a previous session.
       final existing = await _storage.existingDocs([..._docKeys, 'plate_photo_url']);
       if (mounted && existing.isNotEmpty) {
@@ -166,7 +166,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     });
     final repo = context.read<RiderRepository>();
     try {
-      if ((_fee?.registrationFee ?? 0) == 0) {
+      if (_fee?.alreadyPaid == true) {
+        // One-time registration fee already paid — never charge again.
+        setState(() {
+          _feePaid = true;
+          _step += 1;
+        });
+      } else if ((_fee?.registrationFee ?? 0) == 0) {
         await repo.confirmFreeRegistration();
         setState(() {
           _feePaid = true;

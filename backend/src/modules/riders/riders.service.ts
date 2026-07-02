@@ -22,24 +22,38 @@ export async function registerRider(profileId: string, kind: RiderKind) {
     .eq('kind', kind)
     .maybeSingle();
 
-  let riderId = existing?.id;
-  if (!riderId) {
-    const { data, error } = await supabaseAdmin
-      .from('riders')
-      .insert({ profile_id: profileId, kind, status: 'submitted' })
-      .select('id')
-      .single();
-    if (error) throw new AppError(500, `could not create rider: ${error.message}`);
-    riderId = data.id;
+  // The registration fee is a ONE-TIME charge, locked in when the rider first
+  // registers. On any later call we return the already-locked fee — we never
+  // re-claim (that could re-charge a paid rider, or flip a founding rider to paid
+  // once the free slots fill up). `alreadyPaid` lets the app skip payment.
+  if (existing) {
+    const { slotsRemaining } = await quoteRegistrationFee(kind);
+    return {
+      riderId: existing.id,
+      kind,
+      isFounding: existing.is_founding,
+      registrationFee: existing.registration_fee,
+      paymentRequired: existing.registration_fee > 0 && !existing.registration_paid,
+      alreadyPaid: existing.registration_paid,
+      slotsRemaining,
+    };
   }
 
-  const quote = await claimRegistrationFee(riderId!, kind);
+  const { data, error } = await supabaseAdmin
+    .from('riders')
+    .insert({ profile_id: profileId, kind, status: 'submitted' })
+    .select('id')
+    .single();
+  if (error) throw new AppError(500, `could not create rider: ${error.message}`);
+
+  const quote = await claimRegistrationFee(data.id, kind);
   return {
-    riderId,
+    riderId: data.id,
     kind,
     isFounding: quote.isFounding,
     registrationFee: quote.registrationFee,
     paymentRequired: quote.registrationFee > 0,
+    alreadyPaid: false,
     slotsRemaining: quote.slotsRemaining,
   };
 }

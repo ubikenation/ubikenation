@@ -5,11 +5,15 @@ class FeeQuote {
   final int slotsRemaining;
   final bool paymentRequired;
 
+  /// True if this rider already paid their one-time registration fee — never charge again.
+  final bool alreadyPaid;
+
   const FeeQuote({
     required this.isFounding,
     required this.registrationFee,
     required this.slotsRemaining,
     required this.paymentRequired,
+    this.alreadyPaid = false,
   });
 
   factory FeeQuote.fromJson(Map<String, dynamic> j) => FeeQuote(
@@ -17,6 +21,7 @@ class FeeQuote {
         registrationFee: (j['registrationFee'] as num?)?.toInt() ?? 0,
         slotsRemaining: (j['slotsRemaining'] as num?)?.toInt() ?? 0,
         paymentRequired: j['paymentRequired'] as bool? ?? (((j['registrationFee'] as num?)?.toInt() ?? 0) > 0),
+        alreadyPaid: j['alreadyPaid'] as bool? ?? false,
       );
 }
 
