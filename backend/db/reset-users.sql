@@ -26,8 +26,9 @@ delete from vehicles;
 delete from riders;
 delete from public.device_tokens;           -- FCM push tokens
 
--- 2) Profiles — keep admins only.
-delete from profiles where coalesce(role, '') <> 'admin';
+-- 2) Profiles — keep admins only. (`role` is an enum, so use IS DISTINCT FROM,
+--    which also treats a NULL role as "not admin" and deletes it.)
+delete from profiles where role is distinct from 'admin';
 
 -- 3) Auth users — delete everyone who no longer has a (kept admin) profile.
 delete from auth.users
