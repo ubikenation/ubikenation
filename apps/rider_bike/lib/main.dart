@@ -8,6 +8,7 @@ import 'services/api_client.dart';
 import 'services/auth_service.dart';
 import 'services/push_service.dart';
 import 'services/rider_repository.dart';
+import 'services/session_guard.dart';
 import 'theme/app_theme.dart';
 import 'widgets/connectivity_gate.dart';
 import 'widgets/animated_splash.dart';
@@ -20,6 +21,9 @@ import 'screens/call_screen.dart';
 final messengerKey = GlobalKey<ScaffoldMessengerState>();
 final navigatorKey = GlobalKey<NavigatorState>();
 
+/// Set at launch when the rider is returning after being away a while.
+bool pendingWelcome = false;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
@@ -27,6 +31,9 @@ Future<void> main() async {
     // ignore: deprecated_member_use
     anonKey: AppConfig.supabaseAnonKey,
   );
+
+  // Stay signed in across restarts; force a fresh sign-in after 48h idle.
+  pendingWelcome = await SessionGuard.evaluate();
 
   final api = ApiClient();
 
@@ -76,8 +83,42 @@ Future<void> _initPush(ApiClient api) async {
   } catch (_) {/* Firebase not configured / slow — push disabled, app still runs */}
 }
 
-class RiderApp extends StatelessWidget {
+class RiderApp extends StatefulWidget {
   const RiderApp({super.key});
+
+  @override
+  State<RiderApp> createState() => _RiderAppState();
+}
+
+class _RiderAppState extends State<RiderApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    if (pendingWelcome) {
+      pendingWelcome = false;
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (Supabase.instance.client.auth.currentSession != null) SessionGuard.showWelcome(messengerKey);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      SessionGuard.evaluate().then((welcome) {
+        if (welcome && Supabase.instance.client.auth.currentSession != null) {
+          SessionGuard.showWelcome(messengerKey);
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

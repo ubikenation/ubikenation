@@ -7,6 +7,7 @@ import 'config/app_config.dart';
 import 'services/api_client.dart';
 import 'services/auth_service.dart';
 import 'services/push_service.dart';
+import 'services/session_guard.dart';
 import 'services/trip_repository.dart';
 import 'theme/app_theme.dart';
 import 'widgets/connectivity_gate.dart';
@@ -21,6 +22,10 @@ import 'screens/call_screen.dart';
 final navigatorKey = GlobalKey<NavigatorState>();
 final messengerKey = GlobalKey<ScaffoldMessengerState>();
 
+/// Set at launch when the user is returning after being away a while — the app
+/// shows a "welcome back" greeting once it's up.
+bool pendingWelcome = false;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
@@ -28,6 +33,9 @@ Future<void> main() async {
     // ignore: deprecated_member_use
     anonKey: AppConfig.supabaseAnonKey,
   );
+
+  // Keep users signed in across restarts, but force a fresh sign-in after 48h idle.
+  pendingWelcome = await SessionGuard.evaluate();
 
   final api = ApiClient();
   final repo = TripRepository(api);
@@ -86,8 +94,44 @@ Future<void> _initPush(ApiClient api, TripRepository repo) async {
   } catch (_) {/* Firebase not configured / slow — push disabled, app still runs */}
 }
 
-class UBikeApp extends StatelessWidget {
+class UBikeApp extends StatefulWidget {
   const UBikeApp({super.key});
+
+  @override
+  State<UBikeApp> createState() => _UBikeAppState();
+}
+
+class _UBikeAppState extends State<UBikeApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Greet a returning user once the UI is up.
+    if (pendingWelcome) {
+      pendingWelcome = false;
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (Supabase.instance.client.auth.currentSession != null) SessionGuard.showWelcome(messengerKey);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back from the background: re-apply the 48h rule + greet if away a while.
+    if (state == AppLifecycleState.resumed) {
+      SessionGuard.evaluate().then((welcome) {
+        if (welcome && Supabase.instance.client.auth.currentSession != null) {
+          SessionGuard.showWelcome(messengerKey);
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
