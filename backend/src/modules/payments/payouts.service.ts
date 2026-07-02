@@ -133,6 +133,65 @@ export async function runDuePayouts() {
 }
 
 /**
+ * Sweeps the company's accumulated commission (company_ledger rows older than the
+ * payout delay that haven't been paid out) to the company M-Pesa number in a single
+ * transfer. Same 48h cadence as rider payouts. Claim-first (mark paid_at before
+ * transferring) so a crash can't double-pay; on failure the claim is released.
+ * No-op unless AUTO_PAYOUT_ENABLED=true and COMPANY_MPESA_NUMBER is set.
+ */
+export async function runDueCompanyPayouts() {
+  if (!env.AUTO_PAYOUT_ENABLED || !env.COMPANY_MPESA_NUMBER) {
+    return { swept: 0, amount: 0, disabled: true };
+  }
+  const cutoff = new Date(Date.now() - env.AUTO_PAYOUT_DELAY_HOURS * 3_600_000).toISOString();
+
+  // 1) Atomically CLAIM all due, unpaid company earnings (mark paid_at now).
+  const { data: claimed } = await supabaseAdmin
+    .from('company_ledger')
+    .update({ paid_at: new Date().toISOString() })
+    .is('paid_at', null)
+    .gt('amount', 0)
+    .lte('created_at', cutoff)
+    .select('id, amount');
+  const rows = claimed ?? [];
+  if (rows.length === 0) return { swept: 0, amount: 0 };
+
+  const ids = rows.map((r) => r.id);
+  const amount = rows.reduce((s, r) => s + (r.amount ?? 0), 0);
+  const release = () =>
+    supabaseAdmin.from('company_ledger').update({ paid_at: null }).in('id', ids);
+
+  if (amount <= 0) {
+    await release();
+    return { swept: 0, amount: 0 };
+  }
+
+  // 2) Transfer the whole sum to the company M-Pesa. Release the claim on failure.
+  try {
+    const recipient = await paystack.createMpesaRecipient({
+      name: 'U-Bike Company',
+      mpesaNumber: env.COMPANY_MPESA_NUMBER,
+    });
+    const reference = `ubk_company_${randomUUID()}`;
+    const transfer = await paystack.initiateTransfer({
+      amountKes: amount,
+      recipientCode: recipient.recipient_code,
+      reason: 'U-Bike company commission',
+      reference,
+    });
+    logger.info(
+      { count: ids.length, amount, to: env.COMPANY_MPESA_NUMBER, transferStatus: transfer.status },
+      'company commission swept to M-Pesa',
+    );
+    return { swept: ids.length, amount, status: transfer.status };
+  } catch (e) {
+    await release();
+    logger.error({ err: (e as Error).message, amount }, 'company payout failed; reverted for retry');
+    throw e;
+  }
+}
+
+/**
  * Reconciles a payout from a Paystack transfer webhook event. `transfer.success`
  * marks it completed; `transfer.failed`/`transfer.reversed` flips it back to pending
  * so it can be retried. Matched by the transfer reference we set at initiation.

@@ -26,9 +26,10 @@ export async function getDashboardStats() {
   };
 }
 
-/** The company wallet: all-time accumulated commission from the company_ledger. */
+/** Company wallet balance: accumulated commission NOT yet swept to the company
+ *  M-Pesa (paid_at is null). Once auto-payout sweeps it, it drops accordingly. */
 async function sumCompanyWallet(): Promise<number> {
-  const { data } = await supabaseAdmin.from('company_ledger').select('amount');
+  const { data } = await supabaseAdmin.from('company_ledger').select('amount').is('paid_at', null);
   return (data ?? []).reduce((s, r) => s + (r.amount ?? 0), 0);
 }
 

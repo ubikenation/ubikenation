@@ -66,6 +66,9 @@ const schema = z.object({
     .default('false')
     .transform((v) => v === 'true' || v === '1'),
   AUTO_PAYOUT_DELAY_HOURS: z.coerce.number().min(0).default(48),
+  // The company's own M-Pesa number. When auto-payouts are on, the accumulated
+  // commission cut (company wallet) is swept here on the same 48h cadence.
+  COMPANY_MPESA_NUMBER: z.string().optional().default('0792881220'),
 
   // Real route distances via Google Directions (falls back to straight-line on error).
   ENABLE_REAL_ROUTING: z

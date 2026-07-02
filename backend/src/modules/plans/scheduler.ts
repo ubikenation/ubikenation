@@ -1,6 +1,6 @@
 import { env } from '../../config/env';
 import { logger } from '../../utils/logger';
-import { runDuePayouts } from '../payments/payouts.service';
+import { runDueCompanyPayouts, runDuePayouts } from '../payments/payouts.service';
 import { releaseDueScheduledTrips, runDuePlans } from './plans.service';
 
 let timer: NodeJS.Timeout | null = null;
@@ -18,8 +18,9 @@ async function tick() {
     const plans = await runDuePlans();
     const scheduled = await releaseDueScheduledTrips();
     const payouts = await runDuePayouts(); // auto-send rider earnings 48h after completion
-    if (plans.created > 0 || scheduled.released > 0 || payouts.processed > 0) {
-      logger.info({ ...plans, ...scheduled, payouts }, 'scheduler fired due plans/rides/payouts');
+    const companyPayouts = await runDueCompanyPayouts(); // sweep company cut to company M-Pesa
+    if (plans.created > 0 || scheduled.released > 0 || payouts.processed > 0 || companyPayouts.swept > 0) {
+      logger.info({ ...plans, ...scheduled, payouts, companyPayouts }, 'scheduler fired due plans/rides/payouts');
     }
   } catch (e) {
     logger.error({ err: e }, 'scheduler tick failed');

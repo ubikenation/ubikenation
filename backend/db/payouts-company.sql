@@ -14,9 +14,13 @@ create table if not exists company_ledger (
   amount     integer not null,        -- KES, the company's cut for this trip
   rate       numeric(4,3) not null,   -- 0.200 or 0.250
   reason     text,
+  paid_at    timestamptz,             -- set when swept to the company M-Pesa (null = still in wallet)
   created_at timestamptz not null default now()
 );
+-- If the table already existed from an earlier version, add the payout-tracking column.
+alter table company_ledger add column if not exists paid_at timestamptz;
 create index if not exists company_ledger_created_idx on company_ledger (created_at desc);
+create index if not exists company_ledger_unpaid_idx on company_ledger (paid_at) where paid_at is null;
 
 -- The automatic payout scheduler processes each rider payout DELAY hours after the
 -- trip completed. We already have payouts.created_at (set at release), so no schema
