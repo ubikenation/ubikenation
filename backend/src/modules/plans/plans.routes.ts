@@ -6,6 +6,7 @@ import { env } from '../../config/env';
 import {
   createCommuterPlan, listMyPlans, releaseDueScheduledTrips, runDuePlans, setPlanStatus,
 } from './plans.service';
+import { runDuePayouts } from '../payments/payouts.service';
 
 export const plansRouter = Router();
 
@@ -58,5 +59,6 @@ plansRouter.post('/:id/cancel', requireAuth, handler(async (req, res) => {
 plansRouter.post('/run-due', adminOrCron, handler(async (_req, res) => {
   const plans = await runDuePlans();
   const scheduled = await releaseDueScheduledTrips();
-  ok(res, { ...plans, ...scheduled });
+  const payouts = await runDuePayouts();
+  ok(res, { ...plans, ...scheduled, payouts });
 }));

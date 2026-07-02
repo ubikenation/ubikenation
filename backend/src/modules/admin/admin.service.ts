@@ -5,12 +5,13 @@ import { applyWallet } from '../wallet/wallet.service';
 
 /** Aggregate counters for the dashboard header + analytics. */
 export async function getDashboardStats() {
-  const [users, riders, tripsToday, revenue, companyRevenue, pendingVerifs] = await Promise.all([
+  const [users, riders, tripsToday, revenue, companyRevenue, companyWallet, pendingVerifs] = await Promise.all([
     countRows('profiles'),
     countRows('riders', (q) => q.eq('status', 'activated').eq('is_online', true)),
     countRows('trips', (q) => q.gte('created_at', startOfTodayISO())),
     sumCompletedRevenue(),
     sumCompanyRevenue(),
+    sumCompanyWallet(),
     countRows('riders', (q) => q.eq('status', 'under_review')),
   ]);
 
@@ -20,8 +21,15 @@ export async function getDashboardStats() {
     tripsToday,
     revenueToday: revenue,
     companyRevenueToday: companyRevenue,
+    companyWalletBalance: companyWallet, // all-time accumulated commission (company wallet)
     pendingVerifications: pendingVerifs,
   };
+}
+
+/** The company wallet: all-time accumulated commission from the company_ledger. */
+async function sumCompanyWallet(): Promise<number> {
+  const { data } = await supabaseAdmin.from('company_ledger').select('amount');
+  return (data ?? []).reduce((s, r) => s + (r.amount ?? 0), 0);
 }
 
 export async function listRiders(status?: string) {

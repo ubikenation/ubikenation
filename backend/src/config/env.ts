@@ -56,6 +56,17 @@ const schema = z.object({
   // (sent as the x-cron-secret header) without an admin JWT. Empty = header disabled.
   CRON_SECRET: z.string().optional().default(''),
 
+  // Automatic rider payouts: N hours after a trip completes, the scheduler sends
+  // the rider's share to their M-Pesa via Paystack and debits their wallet.
+  // This moves REAL money, so it is OFF by default — set AUTO_PAYOUT_ENABLED=true
+  // on the backend once Paystack Transfers are verified working for your account.
+  AUTO_PAYOUT_ENABLED: z
+    .string()
+    .optional()
+    .default('false')
+    .transform((v) => v === 'true' || v === '1'),
+  AUTO_PAYOUT_DELAY_HOURS: z.coerce.number().min(0).default(48),
+
   // Real route distances via Google Directions (falls back to straight-line on error).
   ENABLE_REAL_ROUTING: z
     .string()

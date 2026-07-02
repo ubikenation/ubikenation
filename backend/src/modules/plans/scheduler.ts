@@ -1,5 +1,6 @@
 import { env } from '../../config/env';
 import { logger } from '../../utils/logger';
+import { runDuePayouts } from '../payments/payouts.service';
 import { releaseDueScheduledTrips, runDuePlans } from './plans.service';
 
 let timer: NodeJS.Timeout | null = null;
@@ -16,8 +17,9 @@ async function tick() {
   try {
     const plans = await runDuePlans();
     const scheduled = await releaseDueScheduledTrips();
-    if (plans.created > 0 || scheduled.released > 0) {
-      logger.info({ ...plans, ...scheduled }, 'scheduler fired due plans/rides');
+    const payouts = await runDuePayouts(); // auto-send rider earnings 48h after completion
+    if (plans.created > 0 || scheduled.released > 0 || payouts.processed > 0) {
+      logger.info({ ...plans, ...scheduled, payouts }, 'scheduler fired due plans/rides/payouts');
     }
   } catch (e) {
     logger.error({ err: e }, 'scheduler tick failed');

@@ -61,7 +61,7 @@ export async function releaseEscrow(tripId: string) {
       profileId: riderProfile.id,
       direction: 'credit',
       amount: split.riderAmount,
-      reason: `Trip earnings (80%) for trip ${tripId}`,
+      reason: `Trip earnings (${Math.round((1 - split.rate) * 100)}%) for trip ${tripId}`,
       tripId,
     });
   }
@@ -73,6 +73,15 @@ export async function releaseEscrow(tripId: string) {
     status: 'pending',
     trip_id: tripId,
   });
+
+  // Company wallet: accumulate the platform's cut (20% or 25%) for this trip.
+  const { error: clErr } = await supabaseAdmin.from('company_ledger').insert({
+    trip_id: tripId,
+    amount: split.companyAmount,
+    rate: split.rate,
+    reason: `Commission (${Math.round(split.rate * 100)}%) for trip ${tripId}`,
+  });
+  if (clErr) logger.error({ tripId, err: clErr.message }, 'company_ledger credit failed');
 
   await supabaseAdmin
     .from('escrow')
