@@ -38,6 +38,7 @@ class _CallScreenState extends State<CallScreen> {
   bool _permanentlyDenied = false;
   String? _roomId;
   String? _myStreamId;
+  String? _appSign; // set only when the project uses AppSign authentication
 
   @override
   void initState() {
@@ -76,6 +77,8 @@ class _CallScreenState extends State<CallScreen> {
       userId = data['userId'] as String;
       _roomId = data['roomId'] as String;
       _myStreamId = '${_roomId}_$userId';
+      final rawSign = data['appSign'] as String?;
+      _appSign = (rawSign != null && rawSign.isNotEmpty) ? rawSign : null;
     } catch (e) {
       _set('Could not start the call (server): $e');
       return;
@@ -101,7 +104,9 @@ class _CallScreenState extends State<CallScreen> {
       };
 
       await ZegoExpressEngine.createEngineWithProfile(
-        ZegoEngineProfile(appId, ZegoScenario.StandardVoiceCall),
+        // When the project uses AppSign auth, pass the sign so login is authenticated
+        // with it (fixes ZEGO 1001005); otherwise leave null and use the room token.
+        ZegoEngineProfile(appId, ZegoScenario.StandardVoiceCall, appSign: _appSign),
       );
       _engineCreated = true;
     } catch (e) {

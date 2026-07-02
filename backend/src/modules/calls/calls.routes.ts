@@ -19,10 +19,21 @@ callsRouter.get('/token', requireAuth, handler(async (req, res) => {
   // Verifies the caller is the trip's customer or assigned rider.
   await getTrip(tripId, req.user!.id);
 
-  const token = generateZegoToken(env.ZEGO_APP_ID, req.user!.id, env.ZEGO_SERVER_SECRET, 3600);
+  // Grant explicit room login (1) + stream publish (2) privileges for THIS room.
+  // Required when the ZEGO project has privilege/room authentication enabled; safely
+  // ignored if it isn't. Fixes ZEGO login error 1001005 (auth on empty-payload token).
+  const payload = JSON.stringify({
+    room_id: tripId,
+    privilege: { '1': 1, '2': 1 },
+    stream_id_list: null,
+  });
+  const token = generateZegoToken(env.ZEGO_APP_ID, req.user!.id, env.ZEGO_SERVER_SECRET, 3600, payload);
   ok(res, {
     token,
     appId: env.ZEGO_APP_ID,
+    // Sent only when the ZEGO project uses AppSign auth; the app then authenticates
+    // with it instead of the token (fixes login error 1001005). Empty ⇒ token auth.
+    appSign: env.ZEGO_APP_SIGN,
     userId: req.user!.id,
     roomId: tripId, // both parties join the same room (the trip)
   });

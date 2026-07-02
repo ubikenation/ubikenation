@@ -24,6 +24,10 @@ const schema = z.object({
   // ZEGOCLOUD real-time voice calls.
   ZEGO_APP_ID: z.coerce.number().optional().default(0),
   ZEGO_SERVER_SECRET: z.string().optional().default(''),
+  // The project's 64-char AppSign. Set this ONLY if the ZEGO console project uses
+  // "AppSign authentication" (the app then authenticates with it instead of a token
+  // — fixes ZEGO login error 1001005). Leave empty to use token authentication.
+  ZEGO_APP_SIGN: z.string().optional().default(''),
 
   // Firebase service account for FCM push (optional; push is a no-op until provided).
   // Provide EITHER a path to the JSON file OR the raw JSON pasted as one env var
